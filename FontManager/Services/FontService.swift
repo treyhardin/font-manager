@@ -36,16 +36,29 @@ class FontService: ObservableObject {
 
     // MARK: - Effective values (system value unless the user overrode it)
 
+    /// Overrides are keyed by family name (not FontItem.id): Style/Width are intrinsic to
+    /// the typeface, so the override survives directory moves and source changes, and
+    /// reapplies if the font is re-added.
+    private func overrideKey(_ font: FontItem) -> String { font.familyName }
+
     func effectiveClassification(_ font: FontItem) -> FontClassification {
-        overrides[font.id]?.classification ?? font.classification
+        overrides[overrideKey(font)]?.classification ?? font.classification
     }
 
     func effectiveWidth(_ font: FontItem) -> FontWidth {
-        overrides[font.id]?.width ?? font.width
+        overrides[overrideKey(font)]?.width ?? font.width
     }
 
     func isOverridden(_ font: FontItem) -> Bool {
-        !(overrides[font.id]?.isEmpty ?? true)
+        !(overrides[overrideKey(font)]?.isEmpty ?? true)
+    }
+
+    func isClassificationOverridden(_ font: FontItem) -> Bool {
+        overrides[overrideKey(font)]?.classification != nil
+    }
+
+    func isWidthOverridden(_ font: FontItem) -> Bool {
+        overrides[overrideKey(font)]?.width != nil
     }
 
     /// A font still missing a Style after system detection and any override.
@@ -133,7 +146,21 @@ class FontService: ObservableObject {
     }
 
     func resetOverride(for font: FontItem) {
-        overrides[font.id] = nil
+        overrides[overrideKey(font)] = nil
+        saveOverrides()
+    }
+
+    func resetClassificationOverride(for font: FontItem) {
+        guard var override = overrides[overrideKey(font)] else { return }
+        override.classification = nil
+        overrides[overrideKey(font)] = override.isEmpty ? nil : override
+        saveOverrides()
+    }
+
+    func resetWidthOverride(for font: FontItem) {
+        guard var override = overrides[overrideKey(font)] else { return }
+        override.width = nil
+        overrides[overrideKey(font)] = override.isEmpty ? nil : override
         saveOverrides()
     }
 
@@ -150,7 +177,7 @@ class FontService: ObservableObject {
     }
 
     func resetOverride(for fonts: [FontItem]) {
-        for font in fonts { overrides[font.id] = nil }
+        for font in fonts { overrides[overrideKey(font)] = nil }
         saveOverrides()
     }
 
@@ -171,15 +198,17 @@ class FontService: ObservableObject {
 
     /// Choosing the system value clears the override for that field.
     private func applyClassification(_ classification: FontClassification, to font: FontItem) {
-        var override = overrides[font.id] ?? FontOverride()
+        let key = overrideKey(font)
+        var override = overrides[key] ?? FontOverride()
         override.classification = classification == font.classification ? nil : classification
-        overrides[font.id] = override.isEmpty ? nil : override
+        overrides[key] = override.isEmpty ? nil : override
     }
 
     private func applyWidth(_ width: FontWidth, to font: FontItem) {
-        var override = overrides[font.id] ?? FontOverride()
+        let key = overrideKey(font)
+        var override = overrides[key] ?? FontOverride()
         override.width = width == font.width ? nil : width
-        overrides[font.id] = override.isEmpty ? nil : override
+        overrides[key] = override.isEmpty ? nil : override
     }
 
     private var overridesURL: URL {
@@ -192,7 +221,28 @@ class FontService: ObservableObject {
     private func loadOverrides() {
         guard let data = try? Data(contentsOf: overridesURL),
               let decoded = try? JSONDecoder().decode([String: FontOverride].self, from: data) else { return }
-        overrides = decoded
+
+        // Migrate old id-based keys ("system:Family", "custom:/dir:Family") to family names.
+        var migrated: [String: FontOverride] = [:]
+        var didMigrate = false
+        for (key, value) in decoded {
+            let family: String
+            if key.contains(":") {
+                family = String(key.split(separator: ":").last ?? Substring(key))
+                didMigrate = true
+            } else {
+                family = key
+            }
+            if var existing = migrated[family] {
+                existing.classification = existing.classification ?? value.classification
+                existing.width = existing.width ?? value.width
+                migrated[family] = existing
+            } else {
+                migrated[family] = value
+            }
+        }
+        overrides = migrated
+        if didMigrate { saveOverrides() }
     }
 
     private func saveOverrides() {
@@ -248,7 +298,8 @@ class FontService: ObservableObject {
     }
 
     private func loadCustomDirectoryFonts() -> [FontItem] {
-        var fontsByFamily: [String: (members: [FontMember], directory: String, descriptor: CTFontDescriptor)] = [:]
+        // Keyed by (directory, family) so the same family in two folders stays distinct.
+        var groups: [String: (family: String, members: [FontMember], directory: String, descriptor: CTFontDescriptor)] = [:]
 
         for directory in customDirectories {
             let dirURL = URL(fileURLWithPath: directory)
@@ -280,36 +331,43 @@ class FontService: ObservableObject {
                         fileURL: fileURL
                     )
 
-                    if var existing = fontsByFamily[familyName] {
+                    let groupKey = "\(directory)\u{0}\(familyName)"
+                    if var existing = groups[groupKey] {
                         existing.members.append(member)
-                        fontsByFamily[familyName] = existing
+                        groups[groupKey] = existing
                     } else {
-                        fontsByFamily[familyName] = (members: [member], directory: directory, descriptor: descriptor)
+                        groups[groupKey] = (family: familyName, members: [member], directory: directory, descriptor: descriptor)
                     }
                 }
             }
         }
 
-        return fontsByFamily.map { (family, value) in
+        return groups.values.map { value in
             FontItem(
-                familyName: family,
+                familyName: value.family,
                 members: value.members,
                 isActive: false,
                 source: .custom(directory: value.directory),
-                classification: FontClassifier.classify(descriptor: value.descriptor, name: family),
-                width: FontClassifier.width(descriptor: value.descriptor, name: family)
+                classification: FontClassifier.classify(descriptor: value.descriptor, name: value.family),
+                width: FontClassifier.width(descriptor: value.descriptor, name: value.family)
             )
         }
     }
 
     private func loadImportedFonts() -> [FontItem] {
+        // Drop tracking for converted files that have since been moved or deleted.
+        let livePaths = importedPaths.filter { FileManager.default.fileExists(atPath: $0) }
+        if livePaths.count != importedPaths.count {
+            importedPaths = livePaths
+            UserDefaults.standard.set(importedPaths, forKey: importedKey)
+        }
+
         var membersByFamily: [String: [FontMember]] = [:]
         var descriptorByFamily: [String: CTFontDescriptor] = [:]
         var familyOrder: [String] = []
 
         for path in importedPaths {
             let url = URL(fileURLWithPath: path)
-            guard FileManager.default.fileExists(atPath: path) else { continue }
 
             // Activate so the converted font is usable immediately and across launches.
             var error: Unmanaged<CFError>?

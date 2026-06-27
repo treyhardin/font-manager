@@ -32,27 +32,28 @@ struct FontDetailView: View {
                             .fontWeight(.bold)
 
                         HStack(spacing: 10) {
-                            Picker("Style", selection: classificationBinding) {
-                                ForEach(FontClassification.allCases) { classification in
-                                    Text(classification.rawValue).tag(classification)
+                            HStack(spacing: 3) {
+                                Picker("Style", selection: classificationBinding) {
+                                    ForEach(FontClassification.allCases) { classification in
+                                        Text(classification.rawValue).tag(classification)
+                                    }
+                                }
+                                .fixedSize()
+                                if fontService.isClassificationOverridden(font) {
+                                    RevertButton { fontService.resetClassificationOverride(for: font) }
                                 }
                             }
-                            .fixedSize()
 
-                            Picker("Width", selection: widthBinding) {
-                                ForEach(FontWidth.allCases) { width in
-                                    Text(width.rawValue).tag(width)
+                            HStack(spacing: 3) {
+                                Picker("Width", selection: widthBinding) {
+                                    ForEach(FontWidth.allCases) { width in
+                                        Text(width.rawValue).tag(width)
+                                    }
                                 }
-                            }
-                            .fixedSize()
-
-                            if fontService.isOverridden(font) {
-                                Button {
-                                    fontService.resetOverride(for: font)
-                                } label: {
-                                    Label("Reset", systemImage: "arrow.uturn.backward")
+                                .fixedSize()
+                                if fontService.isWidthOverridden(font) {
+                                    RevertButton { fontService.resetWidthOverride(for: font) }
                                 }
-                                .help("Reset Style and Width to the values detected on this system")
                             }
 
                             Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
@@ -141,6 +142,21 @@ struct FontDetailView: View {
             }
             .padding(24)
         }
+    }
+}
+
+/// A small revert affordance shown next to an overridden Style/Width picker.
+struct RevertButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 10))
+        }
+        .buttonStyle(.borderless)
+        .help("Reset to the value detected on this system")
+        .accessibilityLabel("Reset to detected value")
     }
 }
 
