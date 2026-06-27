@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var conversion: ConversionManager
     @State private var selection: Set<String> = []
     @State private var isDropTargeted = false
+    @State private var showingDirectories = false
 
     /// Resolve the selected ids back to current FontItems (ids are stable across reloads).
     private var selectedFonts: [FontItem] {
@@ -15,8 +16,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             FontListView(selection: $selection)
+                .navigationSplitViewColumnWidth(min: 264, ideal: 280, max: 360)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             switch selectedFonts.count {
             case 0:
@@ -29,8 +32,28 @@ struct ContentView: View {
                 MultiFontDetailView(fonts: selectedFonts)
             }
         }
-        .searchable(text: $fontService.searchText, prompt: "Search fonts")
-        .frame(minWidth: 700, minHeight: 400)
+        .frame(minWidth: 820, minHeight: 460)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    conversion.pickAndConvert(into: fontService)
+                } label: {
+                    Label("Convert a Font", systemImage: "arrow.down.doc")
+                }
+                .help("Convert a web font (WOFF/WOFF2) to a desktop font")
+
+                Button {
+                    showingDirectories = true
+                } label: {
+                    Label("Manage Folders", systemImage: "folder.badge.plus")
+                }
+                .help("Add or remove custom font folders")
+            }
+        }
+        .toolbarRole(.editor)
+        .sheet(isPresented: $showingDirectories) {
+            DirectoriesView()
+        }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
         }

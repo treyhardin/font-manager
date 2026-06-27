@@ -2,99 +2,106 @@ import SwiftUI
 
 struct FontListView: View {
     @EnvironmentObject var fontService: FontService
-    @EnvironmentObject var conversion: ConversionManager
     @Binding var selection: Set<String>
-    @State private var showingDirectories = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Source filter
-            Picker("Source", selection: $fontService.filterSource) {
-                ForEach(FontService.FontSourceFilter.allCases, id: \.self) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
+            // Compact filter header
+            VStack(spacing: 8) {
+                SidebarSearchField(text: $fontService.searchText)
 
-            // Style / Width filters hide in "Missing" mode (everything there is unclassified).
-            if fontService.filterSource != .missing {
-                // Style filter — icon buttons
-                FilterSection(title: "Style") {
-                    ForEach(fontService.availableClassifications) { classification in
-                        FilterIconButton(
-                            isOn: fontService.filterClassification == classification,
-                            help: classification.rawValue
-                        ) {
-                            fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
-                        } label: {
-                            Text(classification == .symbol ? "✻" : "Ag")
-                                .font(styleSpecimenFont(classification, size: 15))
-                                .minimumScaleFactor(0.5)
-                                .lineLimit(1)
-                        }
+                Picker("Source", selection: $fontService.filterSource) {
+                    ForEach(FontService.FontSourceFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
                     }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
 
-                // Width filter — icon buttons (only when there's more than one width)
-                if fontService.availableWidths.count > 1 {
-                    FilterSection(title: "Width") {
-                        ForEach(fontService.availableWidths) { width in
+                // Style / Width filters hide in "Missing" mode (everything there is unclassified).
+                if fontService.filterSource != .missing {
+                    FilterSection(title: "Style") {
+                        ForEach(fontService.availableClassifications) { classification in
                             FilterIconButton(
-                                isOn: fontService.filterWidth == width,
-                                help: width.rawValue
+                                isOn: fontService.filterClassification == classification,
+                                help: classification.rawValue
                             ) {
-                                fontService.filterWidth = fontService.filterWidth == width ? nil : width
+                                fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
                             } label: {
-                                Image(systemName: width.symbolName)
-                                    .font(.system(size: 12))
+                                Text(classification == .symbol ? "✻" : "Ag")
+                                    .font(styleSpecimenFont(classification, size: 15))
+                                    .minimumScaleFactor(0.5)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+
+                    if fontService.availableWidths.count > 1 {
+                        FilterSection(title: "Width") {
+                            ForEach(fontService.availableWidths) { width in
+                                FilterIconButton(
+                                    isOn: fontService.filterWidth == width,
+                                    help: width.rawValue
+                                ) {
+                                    fontService.filterWidth = fontService.filterWidth == width ? nil : width
+                                } label: {
+                                    Image(systemName: width.symbolName)
+                                        .font(.system(size: 12))
+                                }
                             }
                         }
                     }
                 }
             }
+            .padding(8)
 
             Divider()
-                .padding(.top, 8)
 
             List(fontService.filteredFonts, selection: $selection) { font in
                 FontRowView(font: font)
             }
             .listStyle(.sidebar)
+
+            Divider()
+            Text("\(fontService.filteredFonts.count) families")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
         }
-        .navigationTitle("Fonts")
         .onChange(of: fontService.filterSource) { _, _ in
             // Sub-filters don't carry across source changes (avoids stale empty lists).
             fontService.filterClassification = nil
             fontService.filterWidth = nil
         }
-        .toolbar {
-            ToolbarItem {
-                Text("\(fontService.filteredFonts.count) families")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            ToolbarItem {
+    }
+}
+
+/// A search field styled to sit at the top of the sidebar.
+struct SidebarSearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            TextField("Search fonts", text: $text)
+                .textFieldStyle(.plain)
+            if !text.isEmpty {
                 Button {
-                    conversion.pickAndConvert(into: fontService)
+                    text = ""
                 } label: {
-                    Image(systemName: "arrow.down.doc")
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
                 }
-                .help("Convert a web font (WOFF/WOFF2) to a desktop font")
-            }
-            ToolbarItem {
-                Button {
-                    showingDirectories = true
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                }
-                .help("Manage font directories")
+                .buttonStyle(.plain)
             }
         }
-        .sheet(isPresented: $showingDirectories) {
-            DirectoriesView()
-        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 
@@ -113,8 +120,7 @@ struct FilterSection<Content: View>: View {
                 HStack(spacing: 6) { content }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
