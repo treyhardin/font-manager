@@ -38,7 +38,7 @@ struct ContentView: View {
                 Button {
                     conversion.pickAndConvert(into: fontService)
                 } label: {
-                    Label("Convert a Font", systemImage: "arrow.down.doc")
+                    Label("Convert", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .labelStyle(.titleAndIcon)
                 .help("Convert a web font (WOFF/WOFF2) to a desktop font")
@@ -46,7 +46,7 @@ struct ContentView: View {
                 Button {
                     showingDirectories = true
                 } label: {
-                    Label("Manage Folders", systemImage: "folder.badge.plus")
+                    Label("Sources", systemImage: "folder.badge.plus")
                 }
                 .labelStyle(.titleAndIcon)
                 .help("Add or remove custom font folders")
