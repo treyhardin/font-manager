@@ -18,18 +18,42 @@ struct FontListView: View {
             .padding(.horizontal, 8)
             .padding(.top, 8)
 
-            // Classification filter
-            Picker("Style", selection: $fontService.filterClassification) {
-                Text("All Styles").tag(FontClassification?.none)
+            // Style filter — icon buttons
+            FilterSection(title: "Style") {
                 ForEach(fontService.availableClassifications) { classification in
-                    Text(classification.rawValue).tag(FontClassification?.some(classification))
+                    FilterIconButton(
+                        isOn: fontService.filterClassification == classification,
+                        help: classification.rawValue
+                    ) {
+                        fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
+                    } label: {
+                        Text(classification == .symbol ? "✻" : "Ag")
+                            .font(styleSpecimenFont(classification, size: 15))
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                    }
                 }
             }
-            .pickerStyle(.menu)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+
+            // Width filter — icon buttons (only when there's more than one width)
+            if fontService.availableWidths.count > 1 {
+                FilterSection(title: "Width") {
+                    ForEach(fontService.availableWidths) { width in
+                        FilterIconButton(
+                            isOn: fontService.filterWidth == width,
+                            help: width.rawValue
+                        ) {
+                            fontService.filterWidth = fontService.filterWidth == width ? nil : width
+                        } label: {
+                            Image(systemName: width.symbolName)
+                                .font(.system(size: 12))
+                        }
+                    }
+                }
+            }
 
             Divider()
+                .padding(.top, 8)
 
             List(fontService.filteredFonts, selection: $selectedFont) { font in
                 FontRowView(font: font)
@@ -64,6 +88,61 @@ struct FontListView: View {
         .sheet(isPresented: $showingDirectories) {
             DirectoriesView()
         }
+    }
+}
+
+/// A titled row of filter buttons that scrolls horizontally if it overflows.
+struct FilterSection<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) { content }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+    }
+}
+
+/// A square toggle button used by the Style and Width filters.
+struct FilterIconButton<Label: View>: View {
+    let isOn: Bool
+    let help: String
+    let action: () -> Void
+    @ViewBuilder var label: Label
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .frame(width: 30, height: 28)
+                .background(
+                    isOn ? Color.accentColor : Color.secondary.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .foregroundStyle(isOn ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+/// A representative typeface for each classification, used as the Style button glyph.
+func styleSpecimenFont(_ classification: FontClassification, size: CGFloat) -> Font {
+    switch classification {
+    case .serif: return .system(size: size, design: .serif).weight(.semibold)
+    case .sansSerif: return .system(size: size, design: .default).weight(.semibold)
+    case .slabSerif: return .custom("Rockwell", size: size)
+    case .script: return .custom("Snell Roundhand", size: size)
+    case .display: return .custom("Marker Felt", size: size)
+    case .monospaced: return .system(size: size, design: .monospaced).weight(.medium)
+    case .symbol, .unclassified: return .system(size: size)
     }
 }
 

@@ -20,6 +20,22 @@ enum FontClassification: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
 }
 
+enum FontWidth: String, CaseIterable, Identifiable, Hashable {
+    case condensed = "Condensed"
+    case regular = "Regular"
+    case expanded = "Expanded"
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .condensed: return "arrow.right.and.line.vertical.and.arrow.left"
+        case .regular: return "equal"
+        case .expanded: return "arrow.left.and.line.vertical.and.arrow.right"
+        }
+    }
+}
+
 struct FontItem: Identifiable, Hashable {
     let id: String
     let familyName: String
@@ -27,14 +43,16 @@ struct FontItem: Identifiable, Hashable {
     var isActive: Bool
     let source: FontSource
     let classification: FontClassification
+    let width: FontWidth
 
-    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified) {
+    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified, width: FontWidth = .regular) {
         self.id = Self.makeID(familyName: familyName, source: source)
         self.familyName = familyName
         self.members = members
         self.isActive = isActive
         self.source = source
         self.classification = classification
+        self.width = width
     }
 
     /// IDs are namespaced by source so an imported font can share a family name with

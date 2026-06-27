@@ -21,6 +21,28 @@ enum FontClassifier {
         return classify(descriptor: descriptor, name: name)
     }
 
+    // MARK: - Width
+
+    /// Derive a coarse width from `kCTFontWidthTrait` (normalized −1…1, 0 = normal),
+    /// falling back to the family name.
+    static func width(descriptor: CTFontDescriptor, name: String) -> FontWidth {
+        let traits = CTFontDescriptorCopyAttribute(descriptor, kCTFontTraitsAttribute) as? [String: Any]
+        if let value = traits?[kCTFontWidthTrait as String] as? Double, value != 0 {
+            if value <= -0.06 { return .condensed }
+            if value >= 0.06 { return .expanded }
+            return .regular
+        }
+        let lower = name.lowercased()
+        if lower.contains("condensed") || lower.contains("narrow") || lower.contains("compress") { return .condensed }
+        if lower.contains("expanded") || lower.contains("extended") || lower.contains("wide") { return .expanded }
+        return .regular
+    }
+
+    static func width(postScriptName: String, name: String) -> FontWidth {
+        let descriptor = CTFontDescriptorCreateWithNameAndSize(postScriptName as CFString, 0)
+        return width(descriptor: descriptor, name: name)
+    }
+
     // MARK: - Sources
 
     private static func fromSymbolicTraits(_ descriptor: CTFontDescriptor) -> FontClassification? {

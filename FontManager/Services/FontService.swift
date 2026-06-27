@@ -9,6 +9,7 @@ class FontService: ObservableObject {
     @Published var customDirectories: [String] = []
     @Published var filterSource: FontSourceFilter = .all
     @Published var filterClassification: FontClassification?
+    @Published var filterWidth: FontWidth?
 
     private let directoriesKey = "customFontDirectories"
     private let importedKey = "importedFontFiles"
@@ -37,10 +38,16 @@ class FontService: ObservableObject {
     }
 
     /// Classifications actually present in the current source filter, in enum order —
-    /// drives the filter menu so it never offers an empty bucket.
+    /// drives the filter controls so they never offer an empty bucket.
     var availableClassifications: [FontClassification] {
         let present = Set(fonts.filter(matchesSource).map { $0.classification })
         return FontClassification.allCases.filter { present.contains($0) }
+    }
+
+    /// Widths present in the current source filter, in enum order.
+    var availableWidths: [FontWidth] {
+        let present = Set(fonts.filter(matchesSource).map { $0.width })
+        return FontWidth.allCases.filter { present.contains($0) }
     }
 
     var filteredFonts: [FontItem] {
@@ -48,6 +55,10 @@ class FontService: ObservableObject {
 
         if let classification = filterClassification {
             result = result.filter { $0.classification == classification }
+        }
+
+        if let width = filterWidth {
+            result = result.filter { $0.width == width }
         }
 
         if !searchText.isEmpty {
@@ -105,8 +116,11 @@ class FontService: ObservableObject {
             let classification = members.first.map {
                 FontClassifier.classify(postScriptName: $0.postScriptName, name: family)
             } ?? .unclassified
+            let width = members.first.map {
+                FontClassifier.width(postScriptName: $0.postScriptName, name: family)
+            } ?? .regular
 
-            return FontItem(familyName: family, members: members, source: .system, classification: classification)
+            return FontItem(familyName: family, members: members, source: .system, classification: classification, width: width)
         }
     }
 
@@ -159,7 +173,8 @@ class FontService: ObservableObject {
                 members: value.members,
                 isActive: false,
                 source: .custom(directory: value.directory),
-                classification: FontClassifier.classify(descriptor: value.descriptor, name: family)
+                classification: FontClassifier.classify(descriptor: value.descriptor, name: family),
+                width: FontClassifier.width(descriptor: value.descriptor, name: family)
             )
         }
     }
@@ -207,7 +222,10 @@ class FontService: ObservableObject {
             let classification = descriptorByFamily[family].map {
                 FontClassifier.classify(descriptor: $0, name: family)
             } ?? .unclassified
-            return FontItem(familyName: family, members: membersByFamily[family] ?? [], isActive: true, source: .imported, classification: classification)
+            let width = descriptorByFamily[family].map {
+                FontClassifier.width(descriptor: $0, name: family)
+            } ?? .regular
+            return FontItem(familyName: family, members: membersByFamily[family] ?? [], isActive: true, source: .imported, classification: classification, width: width)
         }
     }
 
