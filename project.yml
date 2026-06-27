@@ -1,0 +1,28 @@
+name: FontManager
+options:
+  bundleIdPrefix: co.trumancreative
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+targets:
+  FontManager:
+    type: application
+    platform: macOS
+    sources:
+      - FontManager
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.trumancreative.FontManager
+        PRODUCT_NAME: Font Manager
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
+    entitlements:
+      path: FontManager/FontManager.entitlements
+      properties:
+        com.apple.security.app-sandbox: false

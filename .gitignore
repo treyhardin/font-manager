@@ -1,0 +1,11 @@
+# Xcode
+FontManager.xcodeproj/
+xcuserdata/
+*.xcworkspace
+DerivedData/
+
+# Build output
+build/
+
+# OS
+.DS_Store
