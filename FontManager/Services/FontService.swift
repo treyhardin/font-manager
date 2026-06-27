@@ -8,6 +8,7 @@ class FontService: ObservableObject {
     @Published var searchText: String = ""
     @Published var customDirectories: [String] = []
     @Published var filterSource: FontSourceFilter = .all
+    @Published var filterActivation: ActivationFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
     /// User Style/Width overrides, keyed by `FontItem.id`. Persisted on-device.
@@ -25,6 +26,12 @@ class FontService: ObservableObject {
         case system = "System"
         case custom = "Custom"
         case missing = "Missing"
+    }
+
+    enum ActivationFilter: String, CaseIterable {
+        case all = "All"
+        case active = "Active"
+        case inactive = "Inactive"
     }
 
     // MARK: - Effective values (system value unless the user overrode it)
@@ -78,6 +85,12 @@ class FontService: ObservableObject {
 
     var filteredFonts: [FontItem] {
         var result = fontsForCurrentSource()
+
+        switch filterActivation {
+        case .all: break
+        case .active: result = result.filter { $0.isActive }
+        case .inactive: result = result.filter { !$0.isActive }
+        }
 
         if let classification = filterClassification {
             result = result.filter { effectiveClassification($0) == classification }

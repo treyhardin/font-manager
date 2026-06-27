@@ -40,6 +40,7 @@ struct ContentView: View {
                 } label: {
                     Label("Convert a Font", systemImage: "arrow.down.doc")
                 }
+                .labelStyle(.titleAndIcon)
                 .help("Convert a web font (WOFF/WOFF2) to a desktop font")
 
                 Button {
@@ -47,6 +48,7 @@ struct ContentView: View {
                 } label: {
                     Label("Manage Folders", systemImage: "folder.badge.plus")
                 }
+                .labelStyle(.titleAndIcon)
                 .help("Add or remove custom font folders")
             }
         }

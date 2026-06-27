@@ -18,6 +18,14 @@ struct FontListView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
 
+                Picker("Activation", selection: $fontService.filterActivation) {
+                    ForEach(FontService.ActivationFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
                 // Style / Width filters hide in "Missing" mode (everything there is unclassified).
                 if fontService.filterSource != .missing {
                     FilterSection(title: "Style") {
