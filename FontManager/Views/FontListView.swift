@@ -3,6 +3,7 @@ import SwiftUI
 struct FontListView: View {
     @EnvironmentObject var fontService: FontService
     @FocusState private var searchFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var styleGlyphSize: CGFloat = 15
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,7 +40,7 @@ struct FontListView: View {
                                 fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
                             } label: {
                                 Text(classification == .symbol ? "✻" : "Ag")
-                                    .font(styleSpecimenFont(classification, size: 15))
+                                    .font(styleSpecimenFont(classification, size: styleGlyphSize))
                                     .minimumScaleFactor(0.5)
                                     .lineLimit(1)
                             }
@@ -56,7 +57,7 @@ struct FontListView: View {
                                     fontService.filterWidth = fontService.filterWidth == width ? nil : width
                                 } label: {
                                     Image(systemName: width.symbolName)
-                                        .font(.system(size: 12))
+                                        .imageScale(.small)
                                 }
                             }
                         }
@@ -145,7 +146,7 @@ struct SidebarSearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
+                .imageScale(.small)
                 .foregroundStyle(.secondary)
             TextField("Search fonts", text: $text)
                 .textFieldStyle(.plain)
@@ -194,10 +195,13 @@ struct FilterIconButton<Label: View>: View {
     let action: () -> Void
     @ViewBuilder var label: Label
 
+    // Scales the button with the user's text-size preference.
+    @ScaledMetric(relativeTo: .body) private var dimension: CGFloat = 29
+
     var body: some View {
         Button(action: action) {
             label
-                .frame(width: 30, height: 28)
+                .frame(width: dimension, height: dimension)
                 .background(
                     isOn ? Color.accentColor : Color.secondary.opacity(0.12),
                     in: RoundedRectangle(cornerRadius: 6)
@@ -244,12 +248,13 @@ func styleSpecimenFont(_ classification: FontClassification, size: CGFloat) -> F
 struct FontRowView: View {
     @EnvironmentObject var fontService: FontService
     let font: FontItem
+    @ScaledMetric(relativeTo: .body) private var previewSize: CGFloat = 14
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(font.familyName)
-                    .font(font.members.first.map { FontPreview.font(for: $0, size: 14, isActive: font.isActive) } ?? .system(size: 14))
+                    .font(font.members.first.map { FontPreview.font(for: $0, size: previewSize, isActive: font.isActive) } ?? .system(size: previewSize))
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
@@ -258,7 +263,8 @@ struct FontRowView: View {
                         Text(classification.rawValue)
                         if fontService.isOverridden(font) {
                             Image(systemName: "pencil")
-                                .font(.system(size: 8))
+                                .imageScale(.small)
+                                .accessibilityLabel("Overridden")
                         }
                         Text("·")
                     }

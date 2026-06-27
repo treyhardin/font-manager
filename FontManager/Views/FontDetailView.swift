@@ -154,7 +154,7 @@ struct RevertButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.uturn.backward")
-                .font(.system(size: 10))
+                .imageScale(.small)
         }
         .buttonStyle(.borderless)
         .help("Reset to the value detected on this system")
