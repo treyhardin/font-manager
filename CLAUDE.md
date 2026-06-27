@@ -34,17 +34,37 @@ General rules and patterns are in `../tc-agent/.claude/rules/`.
 
 ```
 FontManager/
-├── FontManagerApp.swift       # App entry point
-├── FontManager.entitlements   # App sandbox disabled (needed for font APIs)
+├── FontManagerApp.swift            # App entry point + menu commands
+├── FontManager.entitlements        # App sandbox disabled (needed for font APIs)
+├── FontManager-Bridging-Header.h   # Exposes WOFF2Kit to Swift
 ├── Models/
-│   └── FontItem.swift         # FontItem and FontMember data models
+│   └── FontItem.swift              # FontItem and FontMember data models
 ├── Views/
-│   ├── ContentView.swift      # Main NavigationSplitView layout
-│   ├── FontListView.swift     # Sidebar font list with search
-│   └── FontDetailView.swift   # Detail pane with preview and controls
+│   ├── ContentView.swift           # Main layout + drag-to-convert + toast
+│   ├── FontListView.swift          # Sidebar font list with search
+│   ├── FontDetailView.swift        # Detail pane: preview + Download menus
+│   ├── DirectoriesView.swift       # Browse fonts by source directory
+│   └── ConversionToast.swift       # Progress/result toast
 └── Services/
-    └── FontService.swift      # Font enumeration, activation, deactivation
+    ├── FontService.swift           # Enumeration, activation, imported fonts, filtering
+    ├── FontClassifier.swift        # Serif/sans/script… from CoreText traits + PANOSE
+    ├── FontConversionEngine.swift  # Pure SFNT/WOFF plumbing (no app types)
+    ├── FontConversionService.swift # Member-aware export/convert bridge
+    ├── ConversionManager.swift     # Drives operations + toast state
+    └── WOFF2.swift                 # Swift wrapper over the WOFF2Kit C shim
+
+WOFF2Kit/         # C++ static-lib target: extern "C" shim over Google woff2
+ThirdParty/       # Vendored woff2 + brotli sources (self-contained)
 ```
+
+## Font conversion
+
+Export ("Download as…") and web-font import share one engine. Container/format
+conversions only (WOFF/WOFF2 ⇄ OTF/TTF) — outlines are never redrawn, so OTF ⇄ TTF
+is intentionally out of scope. WOFF2 uses bundled `woff2`+`brotli` via `WOFF2Kit`;
+WOFF uses the Compression framework; single faces are extracted from any container
+via `CTFontCopyTable`. Imported fonts are tracked in UserDefaults and re-activated
+on launch (`FontSource.imported`).
 
 ## Development
 

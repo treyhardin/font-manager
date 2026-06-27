@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FontListView: View {
     @EnvironmentObject var fontService: FontService
+    @EnvironmentObject var conversion: ConversionManager
     @Binding var selectedFont: FontItem?
     @State private var showingDirectories = false
 
@@ -14,7 +15,21 @@ struct FontListView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(8)
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            // Classification filter
+            Picker("Style", selection: $fontService.filterClassification) {
+                Text("All Styles").tag(FontClassification?.none)
+                ForEach(fontService.availableClassifications) { classification in
+                    Text(classification.rawValue).tag(FontClassification?.some(classification))
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+
+            Divider()
 
             List(fontService.filteredFonts, selection: $selectedFont) { font in
                 FontRowView(font: font)
@@ -28,6 +43,14 @@ struct FontListView: View {
                 Text("\(fontService.filteredFonts.count) families")
                     .foregroundStyle(.secondary)
                     .font(.caption)
+            }
+            ToolbarItem {
+                Button {
+                    conversion.pickAndConvert(into: fontService)
+                } label: {
+                    Image(systemName: "arrow.down.doc")
+                }
+                .help("Convert a web font (WOFF/WOFF2) to a desktop font")
             }
             ToolbarItem {
                 Button {
@@ -52,15 +75,23 @@ struct FontRowView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(font.familyName)
-                    .font(.custom(font.familyName, size: 14))
+                    .font(font.members.first.map { FontPreview.font(for: $0, size: 14, isActive: font.isActive) } ?? .system(size: 14))
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
+                    if font.classification != .unclassified {
+                        Text(font.classification.rawValue)
+                        Text("·")
+                    }
                     Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
                     if case .custom(let dir) = font.source {
                         Text("·")
                         Text(URL(fileURLWithPath: dir).lastPathComponent)
                             .truncationMode(.head)
+                    }
+                    if case .imported = font.source {
+                        Text("·")
+                        Text("Imported")
                     }
                 }
                 .font(.caption)
@@ -77,6 +108,12 @@ struct FontRowView: View {
         .contextMenu {
             Button(font.isActive ? "Deactivate" : "Activate") {
                 fontService.toggleFont(font)
+            }
+            if case .imported = font.source {
+                Divider()
+                Button("Remove from Library", role: .destructive) {
+                    fontService.removeImportedFont(font)
+                }
             }
         }
     }

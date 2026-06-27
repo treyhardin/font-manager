@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FontDetailView: View {
     @EnvironmentObject var fontService: FontService
+    @EnvironmentObject var conversion: ConversionManager
     let font: FontItem
     @State private var previewText: String = "The quick brown fox jumps over the lazy dog"
     @State private var previewSize: Double = 32
@@ -15,11 +16,32 @@ struct FontDetailView: View {
                         Text(font.familyName)
                             .font(.title)
                             .fontWeight(.bold)
-                        Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            if font.classification != .unclassified {
+                                Text(font.classification.rawValue)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(.quaternary, in: Capsule())
+                                Text("·")
+                            }
+                            Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
+                        }
+                        .foregroundStyle(.secondary)
                     }
 
                     Spacer()
+
+                    if font.members.count > 1 {
+                        Menu("Download All") {
+                            ForEach(ExportFormat.supported) { format in
+                                Button(format.displayName) {
+                                    conversion.downloadAll(font.members, family: font.familyName, as: format)
+                                }
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
 
                     Button(font.isActive ? "Deactivate" : "Activate") {
                         fontService.toggleFont(font)
@@ -49,13 +71,28 @@ struct FontDetailView: View {
                 // Font styles preview
                 ForEach(font.members) { member in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(member.styleName)
+                        HStack {
+                            Text(member.styleName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(.uppercase)
+
+                            Spacer()
+
+                            Menu("Download") {
+                                ForEach(ExportFormat.supported) { format in
+                                    Button(format.displayName) {
+                                        conversion.download(member, as: format)
+                                    }
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
+                        }
 
                         Text(previewText)
-                            .font(.custom(member.postScriptName, size: previewSize))
+                            .font(FontPreview.font(for: member, size: previewSize, isActive: font.isActive))
                             .lineLimit(nil)
                             .textSelection(.enabled)
 
