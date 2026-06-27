@@ -13,13 +13,29 @@ class FontService: ObservableObject {
     @Published var filterWidth: FontWidth?
     /// User Style/Width overrides, keyed by `FontItem.id`. Persisted on-device.
     @Published private(set) var overrides: [String: FontOverride] = [:]
+    /// True while fonts are being (re)enumerated in the background.
+    @Published private(set) var isLoading = false
 
     private let directoriesKey = "customFontDirectories"
     private let importedKey = "importedFontFiles"
-    private let fontExtensions: Set<String> = ["ttf", "otf", "ttc", "dfont"]
+    nonisolated private static let fontExtensions: Set<String> = ["ttf", "otf", "ttc", "dfont"]
 
     /// Paths of individually-converted fonts the app activates on launch.
     private var importedPaths: [String] = []
+
+    /// System fonts rarely change, so cache them and only rebuild custom/imported on edits.
+    private var cachedSystemItems: [FontItem]?
+
+    /// Lightweight, Sendable system-font metadata gathered on the main thread.
+    private struct RawMember: Sendable {
+        let postScriptName: String
+        let styleName: String
+        let weight: Int
+    }
+    private struct RawFamily: Sendable {
+        let family: String
+        let members: [RawMember]
+    }
 
     enum FontSourceFilter: String, CaseIterable {
         case all = "All"
@@ -252,56 +268,95 @@ class FontService: ObservableObject {
 
     // MARK: - Font loading
 
+    /// Full (re)load including system fonts. The heavy CoreText work runs off the main actor.
     func loadAllFonts() {
-        var allFonts: [FontItem] = []
-        allFonts.append(contentsOf: loadSystemFonts())
-        allFonts.append(contentsOf: loadCustomDirectoryFonts())
-        allFonts.append(contentsOf: loadImportedFonts())
-        fonts = allFonts.sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
+        let raw = systemRaw()           // cheap NSFontManager pass on the main thread
+        cachedSystemItems = nil
+        rebuild(systemRaw: raw)
     }
 
-    private func loadSystemFonts() -> [FontItem] {
-        let fontManager = NSFontManager.shared
-        let families = fontManager.availableFontFamilies
+    /// Reload only custom + imported fonts, reusing the cached system fonts.
+    func reloadUserFonts() {
+        guard cachedSystemItems != nil else { loadAllFonts(); return }
+        rebuild(systemRaw: nil)
+    }
 
-        return families.map { family in
-            let nsMembers = fontManager.availableMembers(ofFontFamily: family) ?? []
+    private func rebuild(systemRaw raw: [RawFamily]?) {
+        let dirs = customDirectories
+        let imported = importedPaths
+        let cachedSystem = cachedSystemItems
+        if cachedSystem == nil && fonts.isEmpty { isLoading = true }
 
-            let members = nsMembers.map { memberInfo -> FontMember in
-                let postScriptName = memberInfo[0] as? String ?? ""
-                let styleName = memberInfo[1] as? String ?? "Regular"
-                let weight = memberInfo[2] as? Int ?? 5
+        Task.detached(priority: .userInitiated) {
+            let system = cachedSystem ?? FontService.buildSystemItems(raw ?? [])
+            let custom = FontService.buildCustomItems(dirs)
+            let importedResult = FontService.buildImportedItems(imported)
+            let all = (system + custom + importedResult.items)
+                .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
 
-                let descriptor = NSFontDescriptor(fontAttributes: [
-                    .name: postScriptName
-                ])
-                let fileURL = CTFontDescriptorCopyAttribute(descriptor, kCTFontURLAttribute) as? URL
-
-                return FontMember(
-                    postScriptName: postScriptName,
-                    displayName: "\(family) \(styleName)",
-                    styleName: styleName,
-                    weight: weight,
-                    fileURL: fileURL
-                )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.cachedSystemItems = system
+                if importedResult.livePaths.count != imported.count {
+                    self.importedPaths = importedResult.livePaths
+                    UserDefaults.standard.set(importedResult.livePaths, forKey: self.importedKey)
+                }
+                // Preserve activation that was toggled this session across reloads.
+                let previous = Dictionary(self.fonts.map { ($0.id, $0.isActive) }, uniquingKeysWith: { first, _ in first })
+                self.fonts = all.map { item in
+                    guard let wasActive = previous[item.id] else { return item }
+                    var copy = item
+                    copy.isActive = wasActive
+                    return copy
+                }
+                self.isLoading = false
             }
-
-            let classification = members.first.map {
-                FontClassifier.classify(postScriptName: $0.postScriptName, name: family)
-            } ?? .unclassified
-            let width = members.first.map {
-                FontClassifier.width(postScriptName: $0.postScriptName, name: family)
-            } ?? .regular
-
-            return FontItem(familyName: family, members: members, source: .system, classification: classification, width: width)
         }
     }
 
-    private func loadCustomDirectoryFonts() -> [FontItem] {
+    /// Cheap system-font metadata via NSFontManager (main thread).
+    private func systemRaw() -> [RawFamily] {
+        let manager = NSFontManager.shared
+        return manager.availableFontFamilies.map { family in
+            let members = (manager.availableMembers(ofFontFamily: family) ?? []).map { info in
+                RawMember(
+                    postScriptName: info[0] as? String ?? "",
+                    styleName: info[1] as? String ?? "Regular",
+                    weight: info[2] as? Int ?? 5
+                )
+            }
+            return RawFamily(family: family, members: members)
+        }
+    }
+
+    nonisolated private static func buildSystemItems(_ raw: [RawFamily]) -> [FontItem] {
+        raw.map { family in
+            let members = family.members.map { rawMember -> FontMember in
+                let descriptor = CTFontDescriptorCreateWithNameAndSize(rawMember.postScriptName as CFString, 0)
+                let fileURL = CTFontDescriptorCopyAttribute(descriptor, kCTFontURLAttribute) as? URL
+                return FontMember(
+                    postScriptName: rawMember.postScriptName,
+                    displayName: "\(family.family) \(rawMember.styleName)",
+                    styleName: rawMember.styleName,
+                    weight: rawMember.weight,
+                    fileURL: fileURL
+                )
+            }
+            let classification = members.first.map {
+                FontClassifier.classify(postScriptName: $0.postScriptName, name: family.family)
+            } ?? .unclassified
+            let width = members.first.map {
+                FontClassifier.width(postScriptName: $0.postScriptName, name: family.family)
+            } ?? .regular
+            return FontItem(familyName: family.family, members: members, source: .system, classification: classification, width: width)
+        }
+    }
+
+    nonisolated private static func buildCustomItems(_ directories: [String]) -> [FontItem] {
         // Keyed by (directory, family) so the same family in two folders stays distinct.
         var groups: [String: (family: String, members: [FontMember], directory: String, descriptor: CTFontDescriptor)] = [:]
 
-        for directory in customDirectories {
+        for directory in directories {
             let dirURL = URL(fileURLWithPath: directory)
             guard let enumerator = FileManager.default.enumerator(
                 at: dirURL,
@@ -354,19 +409,16 @@ class FontService: ObservableObject {
         }
     }
 
-    private func loadImportedFonts() -> [FontItem] {
-        // Drop tracking for converted files that have since been moved or deleted.
-        let livePaths = importedPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        if livePaths.count != importedPaths.count {
-            importedPaths = livePaths
-            UserDefaults.standard.set(importedPaths, forKey: importedKey)
-        }
+    /// Builds imported-font items and returns the subset of paths that still exist
+    /// (the caller prunes dead paths on the main actor).
+    nonisolated private static func buildImportedItems(_ paths: [String]) -> (items: [FontItem], livePaths: [String]) {
+        let livePaths = paths.filter { FileManager.default.fileExists(atPath: $0) }
 
         var membersByFamily: [String: [FontMember]] = [:]
         var descriptorByFamily: [String: CTFontDescriptor] = [:]
         var familyOrder: [String] = []
 
-        for path in importedPaths {
+        for path in livePaths {
             let url = URL(fileURLWithPath: path)
 
             // Activate so the converted font is usable immediately and across launches.
@@ -399,7 +451,7 @@ class FontService: ObservableObject {
             }
         }
 
-        return familyOrder.map { family in
+        let items = familyOrder.map { family -> FontItem in
             let classification = descriptorByFamily[family].map {
                 FontClassifier.classify(descriptor: $0, name: family)
             } ?? .unclassified
@@ -408,6 +460,7 @@ class FontService: ObservableObject {
             } ?? .regular
             return FontItem(familyName: family, members: membersByFamily[family] ?? [], isActive: true, source: .imported, classification: classification, width: width)
         }
+        return (items, livePaths)
     }
 
     /// Track + activate converted font files so they appear in the library and persist.
@@ -418,7 +471,7 @@ class FontService: ObservableObject {
             importedPaths.append(url.path)
         }
         UserDefaults.standard.set(importedPaths, forKey: importedKey)
-        loadAllFonts()
+        reloadUserFonts()
     }
 
     /// Deactivate and stop tracking an imported font (leaves the file on disk).
@@ -430,7 +483,7 @@ class FontService: ObservableObject {
             importedPaths.removeAll { $0 == url.path }
         }
         UserDefaults.standard.set(importedPaths, forKey: importedKey)
-        loadAllFonts()
+        reloadUserFonts()
     }
 
     // MARK: - Directory management
@@ -449,7 +502,7 @@ class FontService: ObservableObject {
 
         customDirectories.append(path)
         saveDirectories()
-        loadAllFonts()
+        reloadUserFonts()
     }
 
     func removeDirectory(_ path: String) {
@@ -462,7 +515,7 @@ class FontService: ObservableObject {
 
         customDirectories.removeAll { $0 == path }
         saveDirectories()
-        loadAllFonts()
+        reloadUserFonts()
     }
 
     private func saveDirectories() {

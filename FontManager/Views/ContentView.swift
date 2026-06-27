@@ -74,6 +74,14 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            if fontService.isLoading && fontService.fonts.isEmpty {
+                ProgressView("Loading fonts…")
+                    .controlSize(.large)
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
         .overlay(alignment: .bottom) {
             ConversionToast(center: toastCenter)
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastCenter.toast?.id)
