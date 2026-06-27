@@ -4,19 +4,29 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
-    @State private var selectedFont: FontItem?
+    @State private var selection: Set<String> = []
     @State private var isDropTargeted = false
+
+    /// Resolve the selected ids back to current FontItems (ids are stable across reloads).
+    private var selectedFonts: [FontItem] {
+        fontService.fonts
+            .filter { selection.contains($0.id) }
+            .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
+    }
 
     var body: some View {
         NavigationSplitView {
-            FontListView(selectedFont: $selectedFont)
+            FontListView(selection: $selection)
         } detail: {
-            if let font = selectedFont {
-                FontDetailView(font: font)
-            } else {
+            switch selectedFonts.count {
+            case 0:
                 Text("Select a font family")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case 1:
+                FontDetailView(font: selectedFonts[0])
+            default:
+                MultiFontDetailView(fonts: selectedFonts)
             }
         }
         .searchable(text: $fontService.searchText, prompt: "Search fonts")

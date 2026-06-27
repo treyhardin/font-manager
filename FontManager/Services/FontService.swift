@@ -107,16 +107,13 @@ class FontService: ObservableObject {
     // MARK: - User overrides
 
     func setClassificationOverride(_ classification: FontClassification, for font: FontItem) {
-        var override = overrides[font.id] ?? FontOverride()
-        // Choosing the system value clears the override for that field.
-        override.classification = classification == font.classification ? nil : classification
-        storeOverride(override, for: font)
+        applyClassification(classification, to: font)
+        saveOverrides()
     }
 
     func setWidthOverride(_ width: FontWidth, for font: FontItem) {
-        var override = overrides[font.id] ?? FontOverride()
-        override.width = width == font.width ? nil : width
-        storeOverride(override, for: font)
+        applyWidth(width, to: font)
+        saveOverrides()
     }
 
     func resetOverride(for font: FontItem) {
@@ -124,13 +121,40 @@ class FontService: ObservableObject {
         saveOverrides()
     }
 
-    private func storeOverride(_ override: FontOverride, for font: FontItem) {
-        if override.isEmpty {
-            overrides[font.id] = nil
-        } else {
-            overrides[font.id] = override
-        }
+    // Bulk variants for multi-selection (one save for the whole batch).
+
+    func setClassificationOverride(_ classification: FontClassification, for fonts: [FontItem]) {
+        for font in fonts { applyClassification(classification, to: font) }
         saveOverrides()
+    }
+
+    func setWidthOverride(_ width: FontWidth, for fonts: [FontItem]) {
+        for font in fonts { applyWidth(width, to: font) }
+        saveOverrides()
+    }
+
+    func resetOverride(for fonts: [FontItem]) {
+        for font in fonts { overrides[font.id] = nil }
+        saveOverrides()
+    }
+
+    func setActive(_ active: Bool, for fonts: [FontItem]) {
+        for font in fonts {
+            if active { activateFont(font) } else { deactivateFont(font) }
+        }
+    }
+
+    /// Choosing the system value clears the override for that field.
+    private func applyClassification(_ classification: FontClassification, to font: FontItem) {
+        var override = overrides[font.id] ?? FontOverride()
+        override.classification = classification == font.classification ? nil : classification
+        overrides[font.id] = override.isEmpty ? nil : override
+    }
+
+    private func applyWidth(_ width: FontWidth, to font: FontItem) {
+        var override = overrides[font.id] ?? FontOverride()
+        override.width = width == font.width ? nil : width
+        overrides[font.id] = override.isEmpty ? nil : override
     }
 
     private var overridesURL: URL {

@@ -80,6 +80,50 @@ final class ConversionManager: ObservableObject {
         }
     }
 
+    /// Export every style of multiple families into one folder (a subfolder per family).
+    func downloadMany(_ fonts: [FontItem], as format: ExportFormat) {
+        guard !fonts.isEmpty else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Export Here"
+        panel.message = "Choose a folder to export \(fonts.count) font families into"
+        guard panel.runModal() == .OK, let root = panel.url else { return }
+
+        let total = fonts.reduce(0) { $0 + $1.members.count }
+        work("Exporting \(total) styles…")
+        Task {
+            var saved = 0
+            var failed = 0
+            var index = 0
+            for font in fonts {
+                let folderName = font.familyName.replacingOccurrences(of: "/", with: "-")
+                let familyDirectory = root.appendingPathComponent(folderName, isDirectory: true)
+                try? FileManager.default.createDirectory(at: familyDirectory, withIntermediateDirectories: true)
+                for member in font.members {
+                    index += 1
+                    self.toast?.message = "Exporting \(index) of \(total)…"
+                    do {
+                        let result = try await Task.detached(priority: .userInitiated) {
+                            try FontConversionService.export(member, as: format)
+                        }.value
+                        let name = "\(FontConversionService.baseFilename(for: member)).\(result.ext)"
+                        try result.data.write(to: familyDirectory.appendingPathComponent(name))
+                        saved += 1
+                    } catch {
+                        failed += 1
+                    }
+                }
+            }
+            if failed == 0 {
+                success("Exported \(saved) styles from \(fonts.count) families", reveal: root)
+            } else {
+                failure("Exported \(saved), \(failed) failed")
+            }
+        }
+    }
+
     // MARK: - Import (inbound "Convert web font…")
 
     /// Pick web-font files via an open panel, then convert them.

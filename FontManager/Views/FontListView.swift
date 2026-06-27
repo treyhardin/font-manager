@@ -3,7 +3,7 @@ import SwiftUI
 struct FontListView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
-    @Binding var selectedFont: FontItem?
+    @Binding var selection: Set<String>
     @State private var showingDirectories = false
 
     var body: some View {
@@ -58,9 +58,8 @@ struct FontListView: View {
             Divider()
                 .padding(.top, 8)
 
-            List(fontService.filteredFonts, selection: $selectedFont) { font in
+            List(fontService.filteredFonts, selection: $selection) { font in
                 FontRowView(font: font)
-                    .tag(font)
             }
             .listStyle(.sidebar)
         }

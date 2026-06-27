@@ -143,3 +143,123 @@ struct FontDetailView: View {
         }
     }
 }
+
+/// Detail pane shown when multiple fonts are selected: bulk Style/Width editing
+/// (with "Mixed" when they differ), bulk activate/deactivate, and bulk download.
+struct MultiFontDetailView: View {
+    @EnvironmentObject var fontService: FontService
+    @EnvironmentObject var conversion: ConversionManager
+    let fonts: [FontItem]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(fonts.count) fonts selected")
+                            .font(.title)
+                            .fontWeight(.bold)
+
+                        HStack(spacing: 10) {
+                            Picker("Style", selection: classificationBinding) {
+                                if commonClassification == nil {
+                                    Text("Mixed").tag(FontClassification?.none)
+                                }
+                                ForEach(FontClassification.allCases) { classification in
+                                    Text(classification.rawValue).tag(FontClassification?.some(classification))
+                                }
+                            }
+                            .fixedSize()
+
+                            Picker("Width", selection: widthBinding) {
+                                if commonWidth == nil {
+                                    Text("Mixed").tag(FontWidth?.none)
+                                }
+                                ForEach(FontWidth.allCases) { width in
+                                    Text(width.rawValue).tag(FontWidth?.some(width))
+                                }
+                            }
+                            .fixedSize()
+
+                            if fonts.contains(where: { fontService.isOverridden($0) }) {
+                                Button {
+                                    fontService.resetOverride(for: fonts)
+                                } label: {
+                                    Label("Reset", systemImage: "arrow.uturn.backward")
+                                }
+                                .help("Reset Style and Width for all selected fonts")
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Menu("Download All") {
+                        ForEach(ExportFormat.supported) { format in
+                            Button(format.displayName) {
+                                conversion.downloadMany(fonts, as: format)
+                            }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+
+                    Button("Activate") { fontService.setActive(true, for: fonts) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    Button("Deactivate") { fontService.setActive(false, for: fonts) }
+                        .buttonStyle(.bordered)
+                }
+
+                Divider()
+
+                ForEach(fonts) { font in
+                    HStack(spacing: 12) {
+                        if let member = font.members.first {
+                            Text(font.familyName)
+                                .font(FontPreview.font(for: member, size: 20, isActive: font.isActive))
+                                .lineLimit(1)
+                        } else {
+                            Text(font.familyName)
+                        }
+
+                        Spacer()
+
+                        Text(fontService.effectiveClassification(font).rawValue)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Circle()
+                            .fill(font.isActive ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                    }
+                    Divider()
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private var commonClassification: FontClassification? {
+        let values = Set(fonts.map { fontService.effectiveClassification($0) })
+        return values.count == 1 ? values.first : nil
+    }
+
+    private var classificationBinding: Binding<FontClassification?> {
+        Binding(
+            get: { commonClassification },
+            set: { if let value = $0 { fontService.setClassificationOverride(value, for: fonts) } }
+        )
+    }
+
+    private var commonWidth: FontWidth? {
+        let values = Set(fonts.map { fontService.effectiveWidth($0) })
+        return values.count == 1 ? values.first : nil
+    }
+
+    private var widthBinding: Binding<FontWidth?> {
+        Binding(
+            get: { commonWidth },
+            set: { if let value = $0 { fontService.setWidthOverride(value, for: fonts) } }
+        )
+    }
+}
