@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-enum FontSource: Hashable {
+enum FontSource: Hashable, Sendable {
     case system
     case custom(directory: String)
     case imported
@@ -45,7 +45,7 @@ struct FontOverride: Codable, Equatable {
     var isEmpty: Bool { classification == nil && width == nil }
 }
 
-struct FontItem: Identifiable, Hashable {
+struct FontItem: Identifiable, Hashable, Sendable {
     let id: String
     let familyName: String
     let members: [FontMember]
@@ -75,7 +75,7 @@ struct FontItem: Identifiable, Hashable {
     }
 }
 
-struct FontMember: Identifiable, Hashable {
+struct FontMember: Identifiable, Hashable, Sendable {
     let id: String
     let postScriptName: String
     let displayName: String

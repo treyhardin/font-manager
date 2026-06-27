@@ -2,97 +2,74 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
-/// Runs export/convert operations off the main thread and drives a single progress toast.
+/// Runs export/convert operations off the main thread and reports progress via ToastCenter.
 @MainActor
 final class ConversionManager: ObservableObject {
-    @Published var toast: Toast?
+    private let toast: ToastCenter
 
-    struct Toast: Identifiable {
-        let id = UUID()
-        var message: String
-        var state: State
-        var revealURL: URL?
+    /// Set when an export/convert is blocked awaiting the one-time licensing acknowledgement.
+    @Published var pendingLicenseConfirmation = false
+    private var pendingAction: (() -> Void)?
+    private let licenseKey = "hasAcknowledgedFontLicensing"
 
-        enum State {
-            case working
-            case success
-            case failure
-        }
+    init(toast: ToastCenter) {
+        self.toast = toast
     }
-
-    private var dismissTask: Task<Void, Never>?
 
     // MARK: - Export (outbound "Download as…")
 
     func download(_ member: FontMember, as format: ExportFormat) {
+        guard ensureLicenseAck({ [weak self] in self?.download(member, as: format) }) else { return }
+
         let panel = NSSavePanel()
         panel.nameFieldStringValue = FontConversionService.suggestedFilename(for: member, format: format)
         panel.canCreateDirectories = true
         panel.title = "Download Font"
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
-        work("Exporting \(member.styleName)…")
+        let token = toast.begin("Exporting \(member.styleName)…")
         Task {
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try FontConversionService.export(member, as: format)
+                let url = try await Task.detached(priority: .userInitiated) {
+                    let result = try FontConversionService.export(member, as: format)
+                    let finalURL = destination.pathExtension.isEmpty ? destination.appendingPathExtension(result.ext) : destination
+                    try result.data.write(to: finalURL)
+                    return finalURL
                 }.value
-                let url = destination.pathExtension.isEmpty ? destination.appendingPathExtension(result.ext) : destination
-                try result.data.write(to: url)
-                success("Saved \(url.lastPathComponent)", reveal: url)
+                toast.finish(token, success: true, message: "Saved \(url.lastPathComponent)", reveal: url)
             } catch {
-                failure(error.localizedDescription)
+                toast.finish(token, success: false, message: error.localizedDescription)
             }
         }
     }
 
     func downloadAll(_ members: [FontMember], family: String, as format: ExportFormat) {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Export Here"
-        panel.message = "Choose a folder to export “\(family)” styles into"
-        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        guard ensureLicenseAck({ [weak self] in self?.downloadAll(members, family: family, as: format) }) else { return }
 
-        work("Exporting \(members.count) styles…")
+        guard let directory = chooseDirectory(message: "Choose a folder to export “\(family)” styles into") else { return }
+
+        let token = toast.begin("Exporting \(members.count) styles…")
         Task {
+            var used = Set<String>()
             var saved = 0
             var failed = 0
             for (index, member) in members.enumerated() {
-                self.toast?.message = "Exporting \(index + 1) of \(members.count)…"
-                do {
-                    let result = try await Task.detached(priority: .userInitiated) {
-                        try FontConversionService.export(member, as: format)
-                    }.value
-                    let name = "\(FontConversionService.baseFilename(for: member)).\(result.ext)"
-                    try result.data.write(to: directory.appendingPathComponent(name))
-                    saved += 1
-                } catch {
-                    failed += 1
-                }
+                toast.update(token, message: "Exporting \(index + 1) of \(members.count)…")
+                if await export(member, as: format, into: directory, used: &used) { saved += 1 } else { failed += 1 }
             }
-            if failed == 0 {
-                success("Exported \(saved) style\(saved == 1 ? "" : "s")", reveal: directory)
-            } else {
-                failure("Exported \(saved), \(failed) failed")
-            }
+            finishExport(token, saved: saved, failed: failed, reveal: directory)
         }
     }
 
     /// Export every style of multiple families into one folder (a subfolder per family).
     func downloadMany(_ fonts: [FontItem], as format: ExportFormat) {
         guard !fonts.isEmpty else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Export Here"
-        panel.message = "Choose a folder to export \(fonts.count) font families into"
-        guard panel.runModal() == .OK, let root = panel.url else { return }
+        guard ensureLicenseAck({ [weak self] in self?.downloadMany(fonts, as: format) }) else { return }
+
+        guard let root = chooseDirectory(message: "Choose a folder to export \(fonts.count) font families into") else { return }
 
         let total = fonts.reduce(0) { $0 + $1.members.count }
-        work("Exporting \(total) styles…")
+        let token = toast.begin("Exporting \(total) styles…")
         Task {
             var saved = 0
             var failed = 0
@@ -101,26 +78,36 @@ final class ConversionManager: ObservableObject {
                 let folderName = font.familyName.replacingOccurrences(of: "/", with: "-")
                 let familyDirectory = root.appendingPathComponent(folderName, isDirectory: true)
                 try? FileManager.default.createDirectory(at: familyDirectory, withIntermediateDirectories: true)
+                var used = Set<String>()
                 for member in font.members {
                     index += 1
-                    self.toast?.message = "Exporting \(index) of \(total)…"
-                    do {
-                        let result = try await Task.detached(priority: .userInitiated) {
-                            try FontConversionService.export(member, as: format)
-                        }.value
-                        let name = "\(FontConversionService.baseFilename(for: member)).\(result.ext)"
-                        try result.data.write(to: familyDirectory.appendingPathComponent(name))
-                        saved += 1
-                    } catch {
-                        failed += 1
-                    }
+                    toast.update(token, message: "Exporting \(index) of \(total)…")
+                    if await export(member, as: format, into: familyDirectory, used: &used) { saved += 1 } else { failed += 1 }
                 }
             }
-            if failed == 0 {
-                success("Exported \(saved) styles from \(fonts.count) families", reveal: root)
-            } else {
-                failure("Exported \(saved), \(failed) failed")
-            }
+            finishExport(token, saved: saved, failed: failed, reveal: root)
+        }
+    }
+
+    private func export(_ member: FontMember, as format: ExportFormat, into directory: URL, used: inout Set<String>) async -> Bool {
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try FontConversionService.export(member, as: format)
+            }.value
+            let name = "\(FontConversionService.baseFilename(for: member)).\(result.ext)"
+            let url = uniqueURL(in: directory, name: name, used: &used)
+            try await Task.detached(priority: .userInitiated) { try result.data.write(to: url) }.value
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func finishExport(_ token: Int, saved: Int, failed: Int, reveal: URL) {
+        if failed == 0 {
+            toast.finish(token, success: true, message: "Exported \(saved) file\(saved == 1 ? "" : "s")", reveal: reveal)
+        } else {
+            toast.finish(token, success: false, message: "Exported \(saved), \(failed) failed")
         }
     }
 
@@ -142,10 +129,11 @@ final class ConversionManager: ObservableObject {
     /// Convert web fonts to desktop fonts, save them, then activate + track in the app.
     func convert(_ urls: [URL], into fontService: FontService) {
         guard !urls.isEmpty else { return }
+        guard ensureLicenseAck({ [weak self] in self?.convert(urls, into: fontService) }) else { return }
 
         if urls.count == 1 {
             let source = urls[0]
-            work("Converting \(source.lastPathComponent)…")
+            let token = toast.begin("Converting \(source.lastPathComponent)…")
             Task {
                 do {
                     let decoded = try await Task.detached(priority: .userInitiated) {
@@ -157,82 +145,97 @@ final class ConversionManager: ObservableObject {
                     panel.nameFieldStringValue = "\(source.deletingPathExtension().lastPathComponent).\(ext)"
                     panel.canCreateDirectories = true
                     panel.title = "Save Converted Font"
-                    guard panel.runModal() == .OK, let destination = panel.url else { dismiss(); return }
+                    guard panel.runModal() == .OK, let destination = panel.url else { toast.dismiss(); return }
                     let url = destination.pathExtension.isEmpty ? destination.appendingPathExtension(ext) : destination
-                    try decoded.data.write(to: url)
-                    fontService.addImportedFont(at: url)
-                    success("Converted & activated \(url.lastPathComponent)", reveal: url)
+                    try await Task.detached(priority: .userInitiated) { try decoded.data.write(to: url) }.value
+                    fontService.addImportedFonts([url])
+                    toast.finish(token, success: true, message: "Converted & activated \(url.lastPathComponent)", reveal: url)
                 } catch {
-                    failure(error.localizedDescription)
+                    toast.finish(token, success: false, message: error.localizedDescription)
                 }
             }
             return
         }
 
-        // Multiple files → one destination folder.
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Convert Here"
-        panel.message = "Choose a folder for the converted desktop fonts"
-        guard panel.runModal() == .OK, let directory = panel.url else { return }
+        guard let directory = chooseDirectory(message: "Choose a folder for the converted desktop fonts") else { return }
 
-        work("Converting \(urls.count) fonts…")
+        let token = toast.begin("Converting \(urls.count) fonts…")
         Task {
-            var ok = 0
+            var used = Set<String>()
+            var savedURLs: [URL] = []
             var failed = 0
             for (index, source) in urls.enumerated() {
-                self.toast?.message = "Converting \(index + 1) of \(urls.count)…"
+                toast.update(token, message: "Converting \(index + 1) of \(urls.count)…")
                 do {
                     let decoded = try await Task.detached(priority: .userInitiated) {
                         try FontConversionService.webFontToSFNT(source)
                     }.value
                     let ext = decoded.isTrueType ? "ttf" : "otf"
-                    let url = directory.appendingPathComponent("\(source.deletingPathExtension().lastPathComponent).\(ext)")
-                    try decoded.data.write(to: url)
-                    fontService.addImportedFont(at: url)
-                    ok += 1
+                    let url = uniqueURL(in: directory, name: "\(source.deletingPathExtension().lastPathComponent).\(ext)", used: &used)
+                    try await Task.detached(priority: .userInitiated) { try decoded.data.write(to: url) }.value
+                    savedURLs.append(url)
                 } catch {
                     failed += 1
                 }
             }
+            fontService.addImportedFonts(savedURLs)
             if failed == 0 {
-                success("Converted & activated \(ok) font\(ok == 1 ? "" : "s")", reveal: directory)
+                toast.finish(token, success: true, message: "Converted & activated \(savedURLs.count) font\(savedURLs.count == 1 ? "" : "s")", reveal: directory)
             } else {
-                failure("Converted \(ok), \(failed) failed")
+                toast.finish(token, success: false, message: "Converted \(savedURLs.count), \(failed) failed")
             }
         }
     }
 
-    // MARK: - Toast state
+    // MARK: - Licensing acknowledgement
 
-    private func work(_ message: String) {
-        dismissTask?.cancel()
-        toast = Toast(message: message, state: .working)
+    /// Returns true if the action may proceed; otherwise stashes it and prompts once.
+    private func ensureLicenseAck(_ retry: @escaping () -> Void) -> Bool {
+        if UserDefaults.standard.bool(forKey: licenseKey) { return true }
+        pendingAction = retry
+        pendingLicenseConfirmation = true
+        return false
     }
 
-    private func success(_ message: String, reveal: URL?) {
-        toast = Toast(message: message, state: .success, revealURL: reveal)
-        scheduleDismiss(after: 6)
+    func confirmLicensing() {
+        UserDefaults.standard.set(true, forKey: licenseKey)
+        pendingLicenseConfirmation = false
+        let action = pendingAction
+        pendingAction = nil
+        action?()
     }
 
-    private func failure(_ message: String) {
-        toast = Toast(message: message, state: .failure)
-        scheduleDismiss(after: 8)
+    func cancelLicensing() {
+        pendingLicenseConfirmation = false
+        pendingAction = nil
     }
 
-    func dismiss() {
-        dismissTask?.cancel()
-        toast = nil
+    // MARK: - Helpers
+
+    private func chooseDirectory(message: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = message
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 
-    private func scheduleDismiss(after seconds: Double) {
-        dismissTask?.cancel()
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            self?.toast = nil
+    /// A destination URL that doesn't collide with an existing file or one already
+    /// written in this batch (appends " 2", " 3", … as needed).
+    private func uniqueURL(in directory: URL, name: String, used: inout Set<String>) -> URL {
+        let base = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+        var candidate = name
+        var counter = 1
+        while used.contains(candidate.lowercased())
+            || FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+            counter += 1
+            candidate = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
         }
+        used.insert(candidate.lowercased())
+        return directory.appendingPathComponent(candidate)
     }
 }

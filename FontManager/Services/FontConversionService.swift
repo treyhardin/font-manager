@@ -7,6 +7,8 @@ enum FontConversionService {
 
     /// Build a CTFont for a specific member, preferring the on-disk face so that
     /// inactive custom fonts and individual faces of a .ttc resolve correctly.
+    /// Returns nil if no font with the exact PostScript name can be resolved — important
+    /// because the name-based fallback would otherwise silently substitute a different font.
     static func ctFont(for member: FontMember) -> CTFont? {
         if let url = member.fileURL,
            let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] {
@@ -17,8 +19,12 @@ enum FontConversionService {
                 }
             }
         }
+        // Name-based fallback (for active fonts with no usable fileURL): verify CoreText
+        // returned the font we actually asked for rather than a substitute.
         let descriptor = CTFontDescriptorCreateWithNameAndSize(member.postScriptName as CFString, 0)
-        return CTFontCreateWithFontDescriptor(descriptor, 0, nil)
+        let font = CTFontCreateWithFontDescriptor(descriptor, 0, nil)
+        let resolved = CTFontCopyPostScriptName(font) as String
+        return resolved == member.postScriptName ? font : nil
     }
 
     /// The source SFNT for a member: byte-exact copy when it's already a single-face
@@ -59,9 +65,10 @@ enum FontConversionService {
         return try FontConversionEngine.webFontToSFNT(url)
     }
 
-    /// A clean default filename (without extension) for a member.
+    /// A clean default filename (without extension) for a member, never empty.
     static func baseFilename(for member: FontMember) -> String {
-        let name = member.postScriptName.isEmpty ? member.displayName : member.postScriptName
+        let candidates = [member.postScriptName, member.displayName, member.styleName]
+        let name = candidates.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "Font"
         return name.replacingOccurrences(of: "/", with: "-")
     }
 

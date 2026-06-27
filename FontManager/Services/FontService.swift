@@ -110,7 +110,10 @@ class FontService: ObservableObject {
         return result
     }
 
-    init() {
+    private let toast: ToastCenter
+
+    init(toast: ToastCenter) {
+        self.toast = toast
         customDirectories = UserDefaults.standard.stringArray(forKey: directoriesKey) ?? []
         importedPaths = UserDefaults.standard.stringArray(forKey: importedKey) ?? []
         loadOverrides()
@@ -151,9 +154,18 @@ class FontService: ObservableObject {
         saveOverrides()
     }
 
-    func setActive(_ active: Bool, for fonts: [FontItem]) {
-        for font in fonts {
-            if active { activateFont(font) } else { deactivateFont(font) }
+    func setActive(_ active: Bool, for items: [FontItem]) {
+        var ok = 0
+        var failed = 0
+        for font in items {
+            let success = active ? activateFont(font, notify: false) : deactivateFont(font, notify: false)
+            if success { ok += 1 } else { failed += 1 }
+        }
+        let verb = active ? "Activated" : "Deactivated"
+        if failed == 0 {
+            toast.flash("\(verb) \(ok) font\(ok == 1 ? "" : "s")")
+        } else {
+            toast.flash("\(verb) \(ok), \(failed) failed", isError: true)
         }
     }
 
@@ -340,13 +352,14 @@ class FontService: ObservableObject {
         }
     }
 
-    /// Track + activate a converted font file so it appears in the library and persists.
-    func addImportedFont(at url: URL) {
-        let path = url.path
-        if !importedPaths.contains(path) {
-            importedPaths.append(path)
-            UserDefaults.standard.set(importedPaths, forKey: importedKey)
+    /// Track + activate converted font files so they appear in the library and persist.
+    /// Batched so a multi-file conversion triggers a single reload.
+    func addImportedFonts(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        for url in urls where !importedPaths.contains(url.path) {
+            importedPaths.append(url.path)
         }
+        UserDefaults.standard.set(importedPaths, forKey: importedKey)
         loadAllFonts()
     }
 
@@ -400,28 +413,64 @@ class FontService: ObservableObject {
 
     // MARK: - Font activation
 
-    func deactivateFont(_ font: FontItem) {
-        guard let index = fonts.firstIndex(where: { $0.id == font.id }) else { return }
-
-        for member in font.members {
-            guard let url = member.fileURL else { continue }
-            var error: Unmanaged<CFError>?
-            CTFontManagerUnregisterFontsForURL(url as CFURL, .user, &error)
-        }
-
-        fonts[index].isActive = false
+    /// Distinct file URLs for a family (a .ttc/.dfont collection shares one URL across faces).
+    private func fileURLs(for font: FontItem) -> [URL] {
+        var seen = Set<String>()
+        return font.members.compactMap { $0.fileURL }.filter { seen.insert($0.path).inserted }
     }
 
-    func activateFont(_ font: FontItem) {
-        guard let index = fonts.firstIndex(where: { $0.id == font.id }) else { return }
-
-        for member in font.members {
-            guard let url = member.fileURL else { continue }
-            var error: Unmanaged<CFError>?
-            CTFontManagerRegisterFontsForURL(url as CFURL, .user, &error)
+    @discardableResult
+    func deactivateFont(_ font: FontItem, notify: Bool = true) -> Bool {
+        guard let index = fonts.firstIndex(where: { $0.id == font.id }) else { return false }
+        let urls = fileURLs(for: font)
+        guard !urls.isEmpty else {
+            if notify { toast.flash("“\(font.familyName)” can't be deactivated (no font file).", isError: true) }
+            return false
         }
 
+        var failed = false
+        for url in urls {
+            var error: Unmanaged<CFError>?
+            if !CTFontManagerUnregisterFontsForURL(url as CFURL, .user, &error) { failed = true }
+        }
+        // System fonts can't truly be unregistered; treat as success for the toggle's sake.
+        fonts[index].isActive = false
+        if notify {
+            if failed {
+                toast.flash("“\(font.familyName)” couldn't be fully deactivated.", isError: true)
+            } else {
+                toast.flash("Deactivated “\(font.familyName)”")
+            }
+        }
+        return !failed
+    }
+
+    @discardableResult
+    func activateFont(_ font: FontItem, notify: Bool = true) -> Bool {
+        guard let index = fonts.firstIndex(where: { $0.id == font.id }) else { return false }
+        let urls = fileURLs(for: font)
+        guard !urls.isEmpty else {
+            if notify { toast.flash("“\(font.familyName)” can't be activated (no font file).", isError: true) }
+            return false
+        }
+
+        var failed = false
+        for url in urls {
+            var error: Unmanaged<CFError>?
+            // Already-registered returns false with an error; that's not a real failure.
+            if !CTFontManagerRegisterFontsForURL(url as CFURL, .user, &error) {
+                if let code = error?.takeRetainedValue(), CFErrorGetCode(code) != 105 /* already registered */ {
+                    failed = true
+                }
+            }
+        }
+        if failed {
+            if notify { toast.flash("“\(font.familyName)” couldn't be activated.", isError: true) }
+            return false
+        }
         fonts[index].isActive = true
+        if notify { toast.flash("Activated “\(font.familyName)”") }
+        return true
     }
 
     func toggleFont(_ font: FontItem) {

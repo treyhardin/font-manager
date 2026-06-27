@@ -3,10 +3,10 @@ import AppKit
 
 /// A single progress/result toast pinned to the bottom of the window.
 struct ConversionToast: View {
-    @ObservedObject var manager: ConversionManager
+    @ObservedObject var center: ToastCenter
 
     var body: some View {
-        if let toast = manager.toast {
+        if let toast = center.toast {
             HStack(spacing: 12) {
                 icon(for: toast.state)
                     .frame(width: 18, height: 18)
@@ -25,7 +25,7 @@ struct ConversionToast: View {
                 }
 
                 Button {
-                    manager.dismiss()
+                    center.dismiss()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
@@ -48,7 +48,7 @@ struct ConversionToast: View {
     }
 
     @ViewBuilder
-    private func icon(for state: ConversionManager.Toast.State) -> some View {
+    private func icon(for state: ToastCenter.Toast.State) -> some View {
         switch state {
         case .working:
             ProgressView()

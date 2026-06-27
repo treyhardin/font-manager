@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
+    @EnvironmentObject var toastCenter: ToastCenter
     @State private var selection: Set<String> = []
     @State private var isDropTargeted = false
     @State private var showingDirectories = false
@@ -74,8 +75,14 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            ConversionToast(manager: conversion)
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: conversion.toast?.id)
+            ConversionToast(center: toastCenter)
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastCenter.toast?.id)
+        }
+        .alert("A note on font licensing", isPresented: $conversion.pendingLicenseConfirmation) {
+            Button("Cancel", role: .cancel) { conversion.cancelLicensing() }
+            Button("Continue") { conversion.confirmLicensing() }
+        } message: {
+            Text("Converting or exporting a font is your responsibility with respect to that font's license — some commercial and system fonts restrict conversion or redistribution. Use this only for fonts you're permitted to.")
         }
     }
 

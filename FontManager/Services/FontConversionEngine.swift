@@ -67,7 +67,11 @@ enum FontConversionEngine {
             tables.append((tag, [UInt8](cfData as Data)))
         }
         guard !tables.isEmpty else { throw FontConversionError.noTables }
-        let flavor: UInt32 = hasGlyf ? 0x0001_0000 : (hasCFF ? tag4("OTTO") : 0x0001_0000)
+        guard hasGlyf || hasCFF else {
+            // No outline table (e.g. bitmap-only/SVG-only font) — can't build a valid SFNT.
+            throw FontConversionError.unsupportedFormat("This font has no TrueType or PostScript outlines")
+        }
+        let flavor: UInt32 = hasGlyf ? 0x0001_0000 : tag4("OTTO")
         return Data(buildSFNT(flavor: flavor, tables: tables))
     }
 
