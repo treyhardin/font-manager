@@ -18,35 +18,38 @@ struct FontListView: View {
             .padding(.horizontal, 8)
             .padding(.top, 8)
 
-            // Style filter — icon buttons
-            FilterSection(title: "Style") {
-                ForEach(fontService.availableClassifications) { classification in
-                    FilterIconButton(
-                        isOn: fontService.filterClassification == classification,
-                        help: classification.rawValue
-                    ) {
-                        fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
-                    } label: {
-                        Text(classification == .symbol ? "✻" : "Ag")
-                            .font(styleSpecimenFont(classification, size: 15))
-                            .minimumScaleFactor(0.5)
-                            .lineLimit(1)
+            // Style / Width filters hide in "Missing" mode (everything there is unclassified).
+            if fontService.filterSource != .missing {
+                // Style filter — icon buttons
+                FilterSection(title: "Style") {
+                    ForEach(fontService.availableClassifications) { classification in
+                        FilterIconButton(
+                            isOn: fontService.filterClassification == classification,
+                            help: classification.rawValue
+                        ) {
+                            fontService.filterClassification = fontService.filterClassification == classification ? nil : classification
+                        } label: {
+                            Text(classification == .symbol ? "✻" : "Ag")
+                                .font(styleSpecimenFont(classification, size: 15))
+                                .minimumScaleFactor(0.5)
+                                .lineLimit(1)
+                        }
                     }
                 }
-            }
 
-            // Width filter — icon buttons (only when there's more than one width)
-            if fontService.availableWidths.count > 1 {
-                FilterSection(title: "Width") {
-                    ForEach(fontService.availableWidths) { width in
-                        FilterIconButton(
-                            isOn: fontService.filterWidth == width,
-                            help: width.rawValue
-                        ) {
-                            fontService.filterWidth = fontService.filterWidth == width ? nil : width
-                        } label: {
-                            Image(systemName: width.symbolName)
-                                .font(.system(size: 12))
+                // Width filter — icon buttons (only when there's more than one width)
+                if fontService.availableWidths.count > 1 {
+                    FilterSection(title: "Width") {
+                        ForEach(fontService.availableWidths) { width in
+                            FilterIconButton(
+                                isOn: fontService.filterWidth == width,
+                                help: width.rawValue
+                            ) {
+                                fontService.filterWidth = fontService.filterWidth == width ? nil : width
+                            } label: {
+                                Image(systemName: width.symbolName)
+                                    .font(.system(size: 12))
+                            }
                         }
                     }
                 }
@@ -62,6 +65,11 @@ struct FontListView: View {
             .listStyle(.sidebar)
         }
         .navigationTitle("Fonts")
+        .onChange(of: fontService.filterSource) { _, _ in
+            // Sub-filters don't carry across source changes (avoids stale empty lists).
+            fontService.filterClassification = nil
+            fontService.filterWidth = nil
+        }
         .toolbar {
             ToolbarItem {
                 Text("\(fontService.filteredFonts.count) families")
@@ -158,8 +166,13 @@ struct FontRowView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    if font.classification != .unclassified {
-                        Text(font.classification.rawValue)
+                    let classification = fontService.effectiveClassification(font)
+                    if classification != .unclassified {
+                        Text(classification.rawValue)
+                        if fontService.isOverridden(font) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 8))
+                        }
                         Text("·")
                     }
                     Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")

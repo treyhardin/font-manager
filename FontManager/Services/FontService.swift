@@ -10,6 +10,8 @@ class FontService: ObservableObject {
     @Published var filterSource: FontSourceFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
+    /// User Style/Width overrides, keyed by `FontItem.id`. Persisted on-device.
+    @Published private(set) var overrides: [String: FontOverride] = [:]
 
     private let directoriesKey = "customFontDirectories"
     private let importedKey = "importedFontFiles"
@@ -22,49 +24,73 @@ class FontService: ObservableObject {
         case all = "All"
         case system = "System"
         case custom = "Custom"
+        case missing = "Missing"
     }
 
-    private func matchesSource(_ font: FontItem) -> Bool {
+    // MARK: - Effective values (system value unless the user overrode it)
+
+    func effectiveClassification(_ font: FontItem) -> FontClassification {
+        overrides[font.id]?.classification ?? font.classification
+    }
+
+    func effectiveWidth(_ font: FontItem) -> FontWidth {
+        overrides[font.id]?.width ?? font.width
+    }
+
+    func isOverridden(_ font: FontItem) -> Bool {
+        !(overrides[font.id]?.isEmpty ?? true)
+    }
+
+    /// A font still missing a Style after system detection and any override.
+    func isMissingInfo(_ font: FontItem) -> Bool {
+        effectiveClassification(font) == .unclassified
+    }
+
+    private func fontsForCurrentSource() -> [FontItem] {
         switch filterSource {
         case .all:
-            return true
+            return fonts
         case .system:
-            return font.source == .system
+            return fonts.filter { $0.source == .system }
         case .custom:
             // "Custom" groups everything the user added: directory fonts and imports.
-            if case .system = font.source { return false }
-            return true
+            return fonts.filter {
+                if case .system = $0.source { return false }
+                return true
+            }
+        case .missing:
+            return fonts.filter(isMissingInfo)
         }
     }
 
-    /// Classifications actually present in the current source filter, in enum order —
-    /// drives the filter controls so they never offer an empty bucket.
+    /// Classifications present in the current source filter (effective values), in enum
+    /// order — drives the filter controls so they never offer an empty bucket.
     var availableClassifications: [FontClassification] {
-        let present = Set(fonts.filter(matchesSource).map { $0.classification })
+        let present = Set(fontsForCurrentSource().map(effectiveClassification))
         return FontClassification.allCases.filter { present.contains($0) }
     }
 
     /// Widths present in the current source filter, in enum order.
     var availableWidths: [FontWidth] {
-        let present = Set(fonts.filter(matchesSource).map { $0.width })
+        let present = Set(fontsForCurrentSource().map(effectiveWidth))
         return FontWidth.allCases.filter { present.contains($0) }
     }
 
     var filteredFonts: [FontItem] {
-        var result = fonts.filter(matchesSource)
+        var result = fontsForCurrentSource()
 
         if let classification = filterClassification {
-            result = result.filter { $0.classification == classification }
+            result = result.filter { effectiveClassification($0) == classification }
         }
 
         if let width = filterWidth {
-            result = result.filter { $0.width == width }
+            result = result.filter { effectiveWidth($0) == width }
         }
 
         if !searchText.isEmpty {
             result = result.filter { font in
                 font.familyName.localizedCaseInsensitiveContains(searchText)
-                    || font.classification.rawValue.localizedCaseInsensitiveContains(searchText)
+                    || effectiveClassification(font).rawValue.localizedCaseInsensitiveContains(searchText)
             }
         }
 
@@ -74,7 +100,55 @@ class FontService: ObservableObject {
     init() {
         customDirectories = UserDefaults.standard.stringArray(forKey: directoriesKey) ?? []
         importedPaths = UserDefaults.standard.stringArray(forKey: importedKey) ?? []
+        loadOverrides()
         loadAllFonts()
+    }
+
+    // MARK: - User overrides
+
+    func setClassificationOverride(_ classification: FontClassification, for font: FontItem) {
+        var override = overrides[font.id] ?? FontOverride()
+        // Choosing the system value clears the override for that field.
+        override.classification = classification == font.classification ? nil : classification
+        storeOverride(override, for: font)
+    }
+
+    func setWidthOverride(_ width: FontWidth, for font: FontItem) {
+        var override = overrides[font.id] ?? FontOverride()
+        override.width = width == font.width ? nil : width
+        storeOverride(override, for: font)
+    }
+
+    func resetOverride(for font: FontItem) {
+        overrides[font.id] = nil
+        saveOverrides()
+    }
+
+    private func storeOverride(_ override: FontOverride, for font: FontItem) {
+        if override.isEmpty {
+            overrides[font.id] = nil
+        } else {
+            overrides[font.id] = override
+        }
+        saveOverrides()
+    }
+
+    private var overridesURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Font Manager", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base.appendingPathComponent("overrides.json")
+    }
+
+    private func loadOverrides() {
+        guard let data = try? Data(contentsOf: overridesURL),
+              let decoded = try? JSONDecoder().decode([String: FontOverride].self, from: data) else { return }
+        overrides = decoded
+    }
+
+    private func saveOverrides() {
+        guard let data = try? JSONEncoder().encode(overrides) else { return }
+        try? data.write(to: overridesURL)
     }
 
     // MARK: - Font loading

@@ -7,7 +7,7 @@ enum FontSource: Hashable {
     case imported
 }
 
-enum FontClassification: String, CaseIterable, Identifiable, Hashable {
+enum FontClassification: String, CaseIterable, Identifiable, Hashable, Codable {
     case serif = "Serif"
     case sansSerif = "Sans Serif"
     case slabSerif = "Slab Serif"
@@ -20,7 +20,7 @@ enum FontClassification: String, CaseIterable, Identifiable, Hashable {
     var id: String { rawValue }
 }
 
-enum FontWidth: String, CaseIterable, Identifiable, Hashable {
+enum FontWidth: String, CaseIterable, Identifiable, Hashable, Codable {
     case condensed = "Condensed"
     case regular = "Regular"
     case expanded = "Expanded"
@@ -34,6 +34,15 @@ enum FontWidth: String, CaseIterable, Identifiable, Hashable {
         case .expanded: return "arrow.left.and.line.vertical.and.arrow.right"
         }
     }
+}
+
+/// User-defined overrides for a font's Style/Width, stored only in this app.
+/// A `nil` field means "use the system-derived value."
+struct FontOverride: Codable, Equatable {
+    var classification: FontClassification?
+    var width: FontWidth?
+
+    var isEmpty: Bool { classification == nil && width == nil }
 }
 
 struct FontItem: Identifiable, Hashable {

@@ -7,26 +7,57 @@ struct FontDetailView: View {
     @State private var previewText: String = "The quick brown fox jumps over the lazy dog"
     @State private var previewSize: Double = 32
 
+    private var classificationBinding: Binding<FontClassification> {
+        Binding(
+            get: { fontService.effectiveClassification(font) },
+            set: { fontService.setClassificationOverride($0, for: font) }
+        )
+    }
+
+    private var widthBinding: Binding<FontWidth> {
+        Binding(
+            get: { fontService.effectiveWidth(font) },
+            set: { fontService.setWidthOverride($0, for: font) }
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text(font.familyName)
                             .font(.title)
                             .fontWeight(.bold)
-                        HStack(spacing: 6) {
-                            if font.classification != .unclassified {
-                                Text(font.classification.rawValue)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 2)
-                                    .background(.quaternary, in: Capsule())
-                                Text("·")
+
+                        HStack(spacing: 10) {
+                            Picker("Style", selection: classificationBinding) {
+                                ForEach(FontClassification.allCases) { classification in
+                                    Text(classification.rawValue).tag(classification)
+                                }
                             }
+                            .fixedSize()
+
+                            Picker("Width", selection: widthBinding) {
+                                ForEach(FontWidth.allCases) { width in
+                                    Text(width.rawValue).tag(width)
+                                }
+                            }
+                            .fixedSize()
+
+                            if fontService.isOverridden(font) {
+                                Button {
+                                    fontService.resetOverride(for: font)
+                                } label: {
+                                    Label("Reset", systemImage: "arrow.uturn.backward")
+                                }
+                                .help("Reset Style and Width to the values detected on this system")
+                            }
+
                             Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
                     }
 
                     Spacer()
