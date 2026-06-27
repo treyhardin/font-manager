@@ -19,9 +19,10 @@ activation.
   monospaced, or symbol, derived automatically from each font (no tagging needed).
 - **Filter by width** — condensed, regular, or expanded.
 - **Override Style/Width** — when auto-detection is missing or wrong, set the values
-  yourself. Overrides live only in this app (font files are untouched), persist
-  on-device, and have a Reset button to return to the detected values. A **Missing**
-  filter surfaces every font that still needs a Style.
+  yourself (per font or across a multi-selection). Overrides live only in this app
+  (font files are untouched), persist on-device, and revert per-field. A **Needs
+  Style** toggle surfaces every font that still needs classifying.
+- **Multi-select** to bulk edit, activate/deactivate, or export many families at once.
 - **Group** fonts by family, collection, or source directory.
 - **Download as…** — export any font to your choice of format (desktop OTF/TTF,
   WOFF, or WOFF2), per style or the whole family at once. Conversion is invisible:
