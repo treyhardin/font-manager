@@ -2,13 +2,13 @@ import SwiftUI
 
 struct FontListView: View {
     @EnvironmentObject var fontService: FontService
-    @Binding var selection: Set<String>
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             // Compact filter header
             VStack(spacing: 8) {
-                SidebarSearchField(text: $fontService.searchText)
+                SidebarSearchField(text: $fontService.searchText, focused: $searchFocused)
 
                 Picker("Source", selection: $fontService.filterSource) {
                     ForEach(FontService.FontSourceFilter.allCases, id: \.self) { filter in
@@ -26,8 +26,10 @@ struct FontListView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
 
-                // Style / Width filters hide in "Missing" mode (everything there is unclassified).
-                if fontService.filterSource != .missing {
+                if fontService.showMissingOnly {
+                    // In "Needs Style" mode everything is unclassified, so Style/Width filters don't apply.
+                    needsStyleToggle
+                } else {
                     FilterSection(title: "Style") {
                         ForEach(fontService.availableClassifications) { classification in
                             FilterIconButton(
@@ -59,36 +61,86 @@ struct FontListView: View {
                             }
                         }
                     }
+
+                    if fontService.missingCount > 0 {
+                        needsStyleToggle
+                    }
                 }
             }
             .padding(8)
 
             Divider()
 
-            List(fontService.filteredFonts, selection: $selection) { font in
-                FontRowView(font: font)
+            if fontService.filteredFonts.isEmpty {
+                emptyState
+            } else {
+                List(fontService.filteredFonts, selection: $fontService.selection) { font in
+                    FontRowView(font: font)
+                }
+                .listStyle(.sidebar)
             }
-            .listStyle(.sidebar)
 
             Divider()
-            Text("\(fontService.filteredFonts.count) families")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
+            footer
         }
         .onChange(of: fontService.filterSource) { _, _ in
             // Sub-filters don't carry across source changes (avoids stale empty lists).
             fontService.filterClassification = nil
             fontService.filterWidth = nil
         }
+        .onChange(of: fontService.searchFocusToken) { _, _ in
+            searchFocused = true
+        }
+    }
+
+    private var needsStyleToggle: some View {
+        Toggle(isOn: $fontService.showMissingOnly) {
+            Label("Needs Style (\(fontService.missingCount))", systemImage: "questionmark.circle")
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "magnifyingglass")
+                .font(.title)
+                .foregroundStyle(.tertiary)
+            Text("No fonts match")
+                .foregroundStyle(.secondary)
+            if fontService.hasActiveFilters {
+                Button("Clear Filters") { fontService.clearFilters() }
+                    .controlSize(.small)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private var footer: some View {
+        HStack {
+            Text("\(fontService.filteredFonts.count) families")
+            Spacer()
+            if fontService.hasActiveFilters {
+                Button("Clear") { fontService.clearFilters() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
     }
 }
 
 /// A search field styled to sit at the top of the sidebar.
 struct SidebarSearchField: View {
     @Binding var text: String
+    var focused: FocusState<Bool>.Binding
 
     var body: some View {
         HStack(spacing: 6) {
@@ -97,6 +149,8 @@ struct SidebarSearchField: View {
                 .foregroundStyle(.secondary)
             TextField("Search fonts", text: $text)
                 .textFieldStyle(.plain)
+                .focused(focused)
+                .onExitCommand { text = "" }
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -105,6 +159,7 @@ struct SidebarSearchField: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 8)
@@ -151,6 +206,25 @@ struct FilterIconButton<Label: View>: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Activation indicator: filled = active, outlined = inactive (a shape cue, not just color).
+struct ActivationDot: View {
+    let isActive: Bool
+
+    var body: some View {
+        Group {
+            if isActive {
+                Circle().fill(Color.green)
+            } else {
+                Circle().strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1.5)
+            }
+        }
+        .frame(width: 8, height: 8)
+        .accessibilityLabel(isActive ? "Active" : "Inactive")
     }
 }
 
@@ -205,9 +279,7 @@ struct FontRowView: View {
 
             Spacer()
 
-            Circle()
-                .fill(font.isActive ? Color.green : Color.gray.opacity(0.3))
-                .frame(width: 8, height: 8)
+            ActivationDot(isActive: font.isActive)
         }
         .padding(.vertical, 2)
         .contextMenu {

@@ -11,6 +11,12 @@ class FontService: ObservableObject {
     @Published var filterActivation: ActivationFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
+    /// When on, show only fonts whose Style is still unresolved (composes with the others).
+    @Published var showMissingOnly = false
+    /// Selected font ids (multi-selection), kept here so filtering can keep selected rows visible.
+    @Published var selection: Set<String> = []
+    /// Incremented to request the search field take focus (Cmd+F).
+    @Published var searchFocusToken = 0
     /// User Style/Width overrides, keyed by `FontItem.id`. Persisted on-device.
     @Published private(set) var overrides: [String: FontOverride] = [:]
     /// True while fonts are being (re)enumerated in the background.
@@ -41,7 +47,6 @@ class FontService: ObservableObject {
         case all = "All"
         case system = "System"
         case custom = "Custom"
-        case missing = "Missing"
     }
 
     enum ActivationFilter: String, CaseIterable {
@@ -94,9 +99,35 @@ class FontService: ObservableObject {
                 if case .system = $0.source { return false }
                 return true
             }
-        case .missing:
-            return fonts.filter(isMissingInfo)
         }
+    }
+
+    /// Number of fonts still missing a Style (drives the "Needs Style" affordance).
+    var missingCount: Int {
+        fonts.filter(isMissingInfo).count
+    }
+
+    func selectAllVisible() {
+        selection = Set(filteredFonts.map { $0.id })
+    }
+
+    func focusSearch() {
+        searchFocusToken &+= 1
+    }
+
+    /// True when any filter (beyond the default "All" everything) is active.
+    var hasActiveFilters: Bool {
+        filterSource != .all || filterActivation != .all || showMissingOnly
+            || filterClassification != nil || filterWidth != nil || !searchText.isEmpty
+    }
+
+    func clearFilters() {
+        filterSource = .all
+        filterActivation = .all
+        showMissingOnly = false
+        filterClassification = nil
+        filterWidth = nil
+        searchText = ""
     }
 
     /// Classifications present in the current source filter (effective values), in enum
@@ -115,18 +146,26 @@ class FontService: ObservableObject {
     var filteredFonts: [FontItem] {
         var result = fontsForCurrentSource()
 
+        // Keep already-selected rows visible even after they stop matching, so editing a
+        // font's Style in "Needs Style" mode doesn't make it vanish out from under you.
+        if showMissingOnly {
+            result = result.filter { isMissingInfo($0) || selection.contains($0.id) }
+        }
+
         switch filterActivation {
         case .all: break
-        case .active: result = result.filter { $0.isActive }
-        case .inactive: result = result.filter { !$0.isActive }
+        case .active: result = result.filter { $0.isActive || selection.contains($0.id) }
+        case .inactive: result = result.filter { !$0.isActive || selection.contains($0.id) }
         }
 
-        if let classification = filterClassification {
-            result = result.filter { effectiveClassification($0) == classification }
+        // Sub-filters are skipped in missing mode and ignored if their value isn't available
+        // (prevents a permanently-empty list when the selected bucket disappears).
+        if !showMissingOnly, let classification = filterClassification, availableClassifications.contains(classification) {
+            result = result.filter { effectiveClassification($0) == classification || selection.contains($0.id) }
         }
 
-        if let width = filterWidth {
-            result = result.filter { effectiveWidth($0) == width }
+        if !showMissingOnly, let width = filterWidth, availableWidths.contains(width) {
+            result = result.filter { effectiveWidth($0) == width || selection.contains($0.id) }
         }
 
         if !searchText.isEmpty {
@@ -309,6 +348,7 @@ class FontService: ObservableObject {
                     copy.isActive = wasActive
                     return copy
                 }
+                self.selection.formIntersection(Set(all.map { $0.id }))
                 self.isLoading = false
             }
         }

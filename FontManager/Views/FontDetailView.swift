@@ -4,8 +4,10 @@ struct FontDetailView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
     let font: FontItem
-    @State private var previewText: String = "The quick brown fox jumps over the lazy dog"
-    @State private var previewSize: Double = 32
+    // AppStorage (not @State tied to the font's identity) so the sample text and size
+    // persist as you move between fonts and across launches.
+    @AppStorage("preview.text") private var previewText: String = "The quick brown fox jumps over the lazy dog"
+    @AppStorage("preview.size") private var previewSize: Double = 32
 
     private var classificationBinding: Binding<FontClassification> {
         Binding(
@@ -244,9 +246,7 @@ struct MultiFontDetailView: View {
                         Text(fontService.effectiveClassification(font).rawValue)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Circle()
-                            .fill(font.isActive ? Color.green : Color.gray.opacity(0.3))
-                            .frame(width: 8, height: 8)
+                        ActivationDot(isActive: font.isActive)
                     }
                     Divider()
                 }

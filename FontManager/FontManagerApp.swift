@@ -29,6 +29,12 @@ struct FontManagerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .textEditing) {
+                Button("Find") {
+                    fontService.focusSearch()
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
         }
     }
 }

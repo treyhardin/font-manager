@@ -5,28 +5,25 @@ struct ContentView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
     @EnvironmentObject var toastCenter: ToastCenter
-    @State private var selection: Set<String> = []
     @State private var isDropTargeted = false
     @State private var showingDirectories = false
 
     /// Resolve the selected ids back to current FontItems (ids are stable across reloads).
     private var selectedFonts: [FontItem] {
         fontService.fonts
-            .filter { selection.contains($0.id) }
+            .filter { fontService.selection.contains($0.id) }
             .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
     }
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
-            FontListView(selection: $selection)
+            FontListView()
                 .navigationSplitViewColumnWidth(min: 264, ideal: 280, max: 360)
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             switch selectedFonts.count {
             case 0:
-                Text("Select a font family")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyDetailView()
             case 1:
                 FontDetailView(font: selectedFonts[0])
             default:
@@ -66,7 +63,7 @@ struct ContentView: View {
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
                     .background(Color.accentColor.opacity(0.06))
                     .overlay(
-                        Label("Drop WOFF / WOFF2 to convert", systemImage: "arrow.down.doc")
+                        Label("Drop fonts to add — WOFF / WOFF2 are converted", systemImage: "arrow.down.doc")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     )
@@ -119,5 +116,27 @@ struct ContentView: View {
             }
         }
         return true
+    }
+}
+
+/// Shown when nothing is selected — also surfaces the otherwise-hidden convert-by-drop hint.
+struct EmptyDetailView: View {
+    @EnvironmentObject var fontService: FontService
+    @EnvironmentObject var conversion: ConversionManager
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "textformat")
+                .font(.system(size: 40))
+                .foregroundStyle(.tertiary)
+            Text("Select a font")
+                .font(.title3)
+            Text("Drop a WOFF or WOFF2 file anywhere to convert it to a desktop font, or use **Convert** in the toolbar.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
