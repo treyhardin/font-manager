@@ -1,7 +1,9 @@
 import SwiftUI
+import AppKit
 
 @main
 struct FontManagerApp: App {
+    private let helpURL = URL(string: "https://github.com/treyhardin/font-manager")!
     @StateObject private var toastCenter: ToastCenter
     @StateObject private var fontService: FontService
     @StateObject private var conversion: ConversionManager
@@ -28,6 +30,14 @@ struct FontManagerApp: App {
                     conversion.showConvert = true
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+            CommandGroup(replacing: .help) {
+                Button("Font Manager Help") {
+                    NSWorkspace.shared.open(helpURL)
+                }
+                Button("Report an Issue…") {
+                    NSWorkspace.shared.open(helpURL.appendingPathComponent("issues"))
+                }
             }
             CommandGroup(after: .textEditing) {
                 Button("Find") {

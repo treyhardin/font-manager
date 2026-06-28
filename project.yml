@@ -45,12 +45,13 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.trumancreative.FontManager
         PRODUCT_NAME: Font Manager
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Trey Hardin · MIT Licensed"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: FontManager/FontManager-Bridging-Header.h
         HEADER_SEARCH_PATHS:
