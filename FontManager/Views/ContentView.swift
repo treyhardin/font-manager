@@ -33,13 +33,17 @@ struct ContentView: View {
         .frame(minWidth: 820, minHeight: 460)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    conversion.pickAndConvert(into: fontService)
+                Menu {
+                    ForEach(ExportFormat.supported) { format in
+                        Button("To \(format.displayName)") {
+                            conversion.pickAndConvert(to: format, into: fontService)
+                        }
+                    }
                 } label: {
                     Label("Convert", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .labelStyle(.titleAndIcon)
-                .help("Convert a web font (WOFF/WOFF2) to a desktop font")
+                .help("Convert font files between web and desktop formats")
 
                 Button {
                     showingDirectories = true
@@ -112,30 +116,46 @@ struct ContentView: View {
 
         group.notify(queue: .main) {
             if !urls.isEmpty {
-                conversion.convert(urls, into: fontService)
+                conversion.convert(urls, to: .native, into: fontService)
             }
         }
         return true
     }
 }
 
-/// Shown when nothing is selected — also surfaces the otherwise-hidden convert-by-drop hint.
+/// Shown when nothing is selected — previews a font when one's picked, and surfaces
+/// the otherwise-hidden convert-by-drop affordance.
 struct EmptyDetailView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "textformat")
-                .font(.system(size: 40))
+        VStack(spacing: 14) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 42))
                 .foregroundStyle(.tertiary)
-            Text("Select a font")
-                .font(.title3)
-            Text("Drop a WOFF or WOFF2 file anywhere to convert it to a desktop font, or use **Convert** in the toolbar.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
+
+            VStack(spacing: 4) {
+                Text("Select a font to preview")
+                    .font(.title3)
+                Text("…or drop font files anywhere to convert them between web and desktop formats — WOFF, WOFF2, OTF, and TTF, in either direction.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
+
+            Menu {
+                ForEach(ExportFormat.supported) { format in
+                    Button("To \(format.displayName)") {
+                        conversion.pickAndConvert(to: format, into: fontService)
+                    }
+                }
+            } label: {
+                Label("Convert Fonts…", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .menuStyle(.borderedButton)
+            .fixedSize()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

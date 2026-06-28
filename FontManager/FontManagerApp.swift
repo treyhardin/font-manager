@@ -24,8 +24,15 @@ struct FontManagerApp: App {
         .defaultSize(width: 1000, height: 700)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Convert Web Font…") {
-                    conversion.pickAndConvert(into: fontService)
+                Menu("Convert Fonts") {
+                    ForEach(ExportFormat.supported) { format in
+                        Button("To \(format.displayName)") {
+                            conversion.pickAndConvert(to: format, into: fontService)
+                        }
+                    }
+                }
+                Button("Convert Fonts to Desktop…") {
+                    conversion.pickAndConvert(to: .native, into: fontService)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }

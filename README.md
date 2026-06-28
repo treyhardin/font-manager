@@ -27,9 +27,10 @@ activation.
 - **Download as…** — export any font to your choice of format (desktop OTF/TTF,
   WOFF, or WOFF2), per style or the whole family at once. Conversion is invisible:
   pick a format and you get the file.
-- **Convert web fonts** — drag a `.woff` / `.woff2` onto the window (or use
-  *File ▸ Convert Web Font…*) to turn it into an installable desktop font. The
-  result is saved and activated immediately, so it's usable right away.
+- **Convert fonts in either direction** — pick or drop font files (WOFF, WOFF2,
+  OTF, TTF) and convert to your chosen target via the **Convert** menu. Desktop
+  (OTF/TTF) results are saved and activated immediately; web (WOFF/WOFF2) results
+  are saved for use on the web.
 
 ## Tech Stack
 

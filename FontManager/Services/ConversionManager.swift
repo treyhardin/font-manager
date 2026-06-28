@@ -111,45 +111,51 @@ final class ConversionManager: ObservableObject {
         }
     }
 
-    // MARK: - Import (inbound "Convert web font…")
+    // MARK: - Convert (either direction)
 
-    /// Pick web-font files via an open panel, then convert them.
-    func pickAndConvert(into fontService: FontService) {
+    /// Pick font files via an open panel, then convert them to `format`.
+    func pickAndConvert(to format: ExportFormat, into fontService: FontService) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = ["woff", "woff2", "otf", "ttf"].compactMap { UTType(filenameExtension: $0) }
-        panel.title = "Convert Web Font"
-        panel.message = "Choose WOFF or WOFF2 files to convert into desktop fonts"
+        panel.title = "Convert Fonts"
+        panel.message = "Choose font files to convert to \(format.displayName)"
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        convert(panel.urls, into: fontService)
+        convert(panel.urls, to: format, into: fontService)
     }
 
-    /// Convert web fonts to desktop fonts, save them, then activate + track in the app.
-    func convert(_ urls: [URL], into fontService: FontService) {
+    /// Convert font files to `format`. Desktop (OTF/TTF) results are also activated and
+    /// tracked in the library; web (WOFF/WOFF2) results are just saved.
+    func convert(_ urls: [URL], to format: ExportFormat, into fontService: FontService) {
         guard !urls.isEmpty else { return }
-        guard ensureLicenseAck({ [weak self] in self?.convert(urls, into: fontService) }) else { return }
+        guard ensureLicenseAck({ [weak self] in self?.convert(urls, to: format, into: fontService) }) else { return }
+
+        let addsToLibrary = (format == .native)
 
         if urls.count == 1 {
             let source = urls[0]
             let token = toast.begin("Converting \(source.lastPathComponent)…")
             Task {
                 do {
-                    let decoded = try await Task.detached(priority: .userInitiated) {
-                        try FontConversionService.webFontToSFNT(source)
+                    let result = try await Task.detached(priority: .userInitiated) {
+                        try FontConversionService.convert(source, to: format)
                     }.value
-                    let ext = decoded.isTrueType ? "ttf" : "otf"
 
                     let panel = NSSavePanel()
-                    panel.nameFieldStringValue = "\(source.deletingPathExtension().lastPathComponent).\(ext)"
+                    panel.nameFieldStringValue = "\(source.deletingPathExtension().lastPathComponent).\(result.ext)"
                     panel.canCreateDirectories = true
                     panel.title = "Save Converted Font"
                     guard panel.runModal() == .OK, let destination = panel.url else { toast.dismiss(); return }
-                    let url = destination.pathExtension.isEmpty ? destination.appendingPathExtension(ext) : destination
-                    try await Task.detached(priority: .userInitiated) { try decoded.data.write(to: url) }.value
-                    fontService.addImportedFonts([url])
-                    toast.finish(token, success: true, message: "Converted & activated \(url.lastPathComponent)", reveal: url)
+                    let url = destination.pathExtension.isEmpty ? destination.appendingPathExtension(result.ext) : destination
+                    try await Task.detached(priority: .userInitiated) { try result.data.write(to: url) }.value
+                    if addsToLibrary {
+                        fontService.addImportedFonts([url])
+                        toast.finish(token, success: true, message: "Converted & activated \(url.lastPathComponent)", reveal: url)
+                    } else {
+                        toast.finish(token, success: true, message: "Saved \(url.lastPathComponent)", reveal: url)
+                    }
                 } catch {
                     toast.finish(token, success: false, message: error.localizedDescription)
                 }
@@ -157,7 +163,7 @@ final class ConversionManager: ObservableObject {
             return
         }
 
-        guard let directory = chooseDirectory(message: "Choose a folder for the converted desktop fonts") else { return }
+        guard let directory = chooseDirectory(message: "Choose a folder for the converted fonts") else { return }
 
         let token = toast.begin("Converting \(urls.count) fonts…")
         Task {
@@ -167,20 +173,20 @@ final class ConversionManager: ObservableObject {
             for (index, source) in urls.enumerated() {
                 toast.update(token, message: "Converting \(index + 1) of \(urls.count)…")
                 do {
-                    let decoded = try await Task.detached(priority: .userInitiated) {
-                        try FontConversionService.webFontToSFNT(source)
+                    let result = try await Task.detached(priority: .userInitiated) {
+                        try FontConversionService.convert(source, to: format)
                     }.value
-                    let ext = decoded.isTrueType ? "ttf" : "otf"
-                    let url = uniqueURL(in: directory, name: "\(source.deletingPathExtension().lastPathComponent).\(ext)", used: &used)
-                    try await Task.detached(priority: .userInitiated) { try decoded.data.write(to: url) }.value
+                    let url = uniqueURL(in: directory, name: "\(source.deletingPathExtension().lastPathComponent).\(result.ext)", used: &used)
+                    try await Task.detached(priority: .userInitiated) { try result.data.write(to: url) }.value
                     savedURLs.append(url)
                 } catch {
                     failed += 1
                 }
             }
-            fontService.addImportedFonts(savedURLs)
+            if addsToLibrary { fontService.addImportedFonts(savedURLs) }
+            let verb = addsToLibrary ? "Converted & activated" : "Converted"
             if failed == 0 {
-                toast.finish(token, success: true, message: "Converted & activated \(savedURLs.count) font\(savedURLs.count == 1 ? "" : "s")", reveal: directory)
+                toast.finish(token, success: true, message: "\(verb) \(savedURLs.count) font\(savedURLs.count == 1 ? "" : "s")", reveal: directory)
             } else {
                 toast.finish(token, success: false, message: "Converted \(savedURLs.count), \(failed) failed")
             }

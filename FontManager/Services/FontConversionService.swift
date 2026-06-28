@@ -65,6 +65,19 @@ enum FontConversionService {
         return try FontConversionEngine.webFontToSFNT(url)
     }
 
+    /// Convert any font file (WOFF/WOFF2/OTF/TTF) to a target format — in either direction.
+    static func convert(_ url: URL, to format: ExportFormat) throws -> (data: Data, ext: String) {
+        let decoded = try webFontToSFNT(url)
+        switch format {
+        case .native:
+            return (decoded.data, decoded.isTrueType ? "ttf" : "otf")
+        case .woff:
+            return (try FontConversionEngine.wrapWOFF(sfnt: decoded.data), "woff")
+        case .woff2:
+            return (try WOFF2.encode(decoded.data), "woff2")
+        }
+    }
+
     /// A clean default filename (without extension) for a member, never empty.
     static func baseFilename(for member: FontMember) -> String {
         let candidates = [member.postScriptName, member.displayName, member.styleName]
