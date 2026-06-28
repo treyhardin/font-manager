@@ -7,7 +7,28 @@ deactivating the fonts on your system — without deleting them. It's built with
 SwiftUI and talks directly to Core Text and AppKit for font enumeration and
 activation.
 
-> ⚠️ **Status:** Early development (v0.1.0). Things will change.
+## Install
+
+Download the latest **`Font-Manager-x.y.z.dmg`** from the
+[Releases page](https://github.com/treyhardin/font-manager/releases), open it, and
+drag **Font Manager** to your Applications folder.
+
+> **First launch:** the app isn't yet notarized by Apple, so macOS will warn that it
+> "can't be opened." Right-click the app → **Open** (then **Open** again), or go to
+> **System Settings → Privacy & Security → Open Anyway**. You only need to do this once.
+> If macOS says the app is "damaged," clear the quarantine flag:
+> `xattr -dr com.apple.quarantine "/Applications/Font Manager.app"`
+
+**Homebrew** (once a tap is published):
+
+```sh
+brew install --cask --no-quarantine treyhardin/tap/font-manager
+```
+
+`--no-quarantine` skips the Gatekeeper prompt above while the app is unsigned.
+
+The app **updates itself** via Sparkle — you'll be notified when a new version is
+available (toggle in **Settings → Updates**).
 
 ## Features
 
@@ -109,6 +130,20 @@ xcodebuild -scheme FontManager -configuration Debug build
 xcodebuild -scheme FontManager -configuration Debug build && \
   open ~/Library/Developer/Xcode/DerivedData/FontManager-*/Build/Products/Debug/Font\ Manager.app
 ```
+
+### Cutting a release
+
+`scripts/release.sh` builds a universal Release, packages a `.dmg`, and generates the
+EdDSA-signed Sparkle `appcast.xml`. It prints the `gh release create` command to publish
+them (the `appcast.xml` must be a release asset so `…/releases/latest/download/appcast.xml`
+resolves). Sparkle signing keys are created once with `scripts/generate-keys.sh`.
+
+## Privacy
+
+Font Manager collects **no** data — no analytics, no tracking, no accounts. The only
+network request it makes is an **update check** against this repo's releases, which you
+can turn off in **Settings → Updates**. Your font files are never modified, and Style/Width
+overrides are stored locally in `~/Library/Application Support/Font Manager/`.
 
 ## License
 

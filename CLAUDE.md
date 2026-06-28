@@ -82,4 +82,14 @@ xcodebuild -scheme FontManager -configuration Debug build && open ~/Library/Deve
 The `.xcodeproj` is generated from `project.yml` via XcodeGen and is gitignored.
 To regenerate it after a fresh clone: `xcodegen generate`.
 
+## Distribution
+
+- Free, open-source (MIT). Distributed as a `.dmg` from GitHub Releases; **unsigned**
+  for now (notarization is a documented later upgrade — needs an Apple Developer ID).
+- Auto-updates via **Sparkle** (appcast at `…/releases/latest/download/appcast.xml`,
+  EdDSA-signed). The signing **private key lives in the maintainer's login Keychain** —
+  back it up; without it you can't sign updates existing users will accept.
+- `scripts/release.sh` builds a universal `.dmg` + signed appcast; `scripts/generate-keys.sh`
+  creates the Sparkle key (one-time). Homebrew cask in `Casks/font-manager.rb`.
+
 Update this file as the project evolves.
