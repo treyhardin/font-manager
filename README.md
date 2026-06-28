@@ -27,10 +27,10 @@ activation.
 - **Download as…** — export any font to your choice of format (desktop OTF/TTF,
   WOFF, or WOFF2), per style or the whole family at once. Conversion is invisible:
   pick a format and you get the file.
-- **Convert fonts in either direction** — pick or drop font files (WOFF, WOFF2,
-  OTF, TTF) and convert to your chosen target via the **Convert** menu. Desktop
-  (OTF/TTF) results are saved and activated immediately; web (WOFF/WOFF2) results
-  are saved for use on the web.
+- **Convert fonts in either direction** — the **Convert** sheet lets you upload a
+  font, detects its format, and offers one-click downloads in the other formats
+  (WOFF, WOFF2, OTF, TTF). Or drop font files onto the window to add them to your
+  library as activated desktop fonts.
 
 ## Tech Stack
 

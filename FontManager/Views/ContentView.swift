@@ -33,17 +33,13 @@ struct ContentView: View {
         .frame(minWidth: 820, minHeight: 460)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    ForEach(ExportFormat.supported) { format in
-                        Button("To \(format.displayName)") {
-                            conversion.pickAndConvert(to: format, into: fontService)
-                        }
-                    }
+                Button {
+                    conversion.showConvert = true
                 } label: {
                     Label("Convert", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .labelStyle(.titleAndIcon)
-                .help("Convert font files between web and desktop formats")
+                .help("Upload a font and download it in another format")
 
                 Button {
                     showingDirectories = true
@@ -57,6 +53,9 @@ struct ContentView: View {
         .toolbarRole(.editor)
         .sheet(isPresented: $showingDirectories) {
             DirectoriesView()
+        }
+        .sheet(isPresented: $conversion.showConvert) {
+            ConvertView()
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers)
@@ -145,17 +144,12 @@ struct EmptyDetailView: View {
                     .frame(maxWidth: 360)
             }
 
-            Menu {
-                ForEach(ExportFormat.supported) { format in
-                    Button("To \(format.displayName)") {
-                        conversion.pickAndConvert(to: format, into: fontService)
-                    }
-                }
+            Button {
+                conversion.showConvert = true
             } label: {
-                Label("Convert Fonts…", systemImage: "arrow.triangle.2.circlepath")
+                Label("Convert a Font…", systemImage: "arrow.triangle.2.circlepath")
             }
-            .menuStyle(.borderedButton)
-            .fixedSize()
+            .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

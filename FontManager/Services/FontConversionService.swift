@@ -78,6 +78,56 @@ enum FontConversionService {
         }
     }
 
+    // MARK: - Upload → detect → download flow
+
+    /// A font file the user uploaded, decoded once so any target format is instant.
+    struct UploadedFont: Sendable {
+        let url: URL
+        let sfnt: Data
+        let isTrueType: Bool
+
+        var displayName: String { url.lastPathComponent }
+        var sourceExtension: String { url.pathExtension.lowercased() }
+        var outlineDescription: String { isTrueType ? "TrueType outlines" : "PostScript (CFF) outlines" }
+    }
+
+    /// A format the uploaded font can be converted into.
+    struct ConvertTarget: Identifiable, Sendable {
+        let format: ExportFormat
+        let ext: String
+        var id: String { ext }
+        var label: String { ext.uppercased() }
+    }
+
+    static func upload(_ url: URL) throws -> UploadedFont {
+        let decoded = try webFontToSFNT(url)
+        return UploadedFont(url: url, sfnt: decoded.data, isTrueType: decoded.isTrueType)
+    }
+
+    /// Formats the upload can be converted to, excluding the format it's already in.
+    /// (The desktop option matches the source's outline type — we don't redraw outlines,
+    /// so a CFF font offers OTF and a TrueType font offers TTF, not both.)
+    static func availableTargets(for uploaded: UploadedFont) -> [ConvertTarget] {
+        let desktopExt = uploaded.isTrueType ? "ttf" : "otf"
+        let all = [
+            ConvertTarget(format: .native, ext: desktopExt),
+            ConvertTarget(format: .woff, ext: "woff"),
+            ConvertTarget(format: .woff2, ext: "woff2"),
+        ]
+        return all.filter { $0.ext != uploaded.sourceExtension }
+    }
+
+    static func encode(_ uploaded: UploadedFont, to format: ExportFormat) throws -> (data: Data, ext: String) {
+        switch format {
+        case .native:
+            return (uploaded.sfnt, uploaded.isTrueType ? "ttf" : "otf")
+        case .woff:
+            return (try FontConversionEngine.wrapWOFF(sfnt: uploaded.sfnt), "woff")
+        case .woff2:
+            return (try WOFF2.encode(uploaded.sfnt), "woff2")
+        }
+    }
+
     /// A clean default filename (without extension) for a member, never empty.
     static func baseFilename(for member: FontMember) -> String {
         let candidates = [member.postScriptName, member.displayName, member.styleName]

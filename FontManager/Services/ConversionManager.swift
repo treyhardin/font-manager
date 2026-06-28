@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 final class ConversionManager: ObservableObject {
     private let toast: ToastCenter
 
+    /// Drives presentation of the Convert sheet.
+    @Published var showConvert = false
     /// Set when an export/convert is blocked awaiting the one-time licensing acknowledgement.
     @Published var pendingLicenseConfirmation = false
     private var pendingAction: (() -> Void)?
@@ -112,19 +114,6 @@ final class ConversionManager: ObservableObject {
     }
 
     // MARK: - Convert (either direction)
-
-    /// Pick font files via an open panel, then convert them to `format`.
-    func pickAndConvert(to format: ExportFormat, into fontService: FontService) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = ["woff", "woff2", "otf", "ttf"].compactMap { UTType(filenameExtension: $0) }
-        panel.title = "Convert Fonts"
-        panel.message = "Choose font files to convert to \(format.displayName)"
-        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        convert(panel.urls, to: format, into: fontService)
-    }
 
     /// Convert font files to `format`. Desktop (OTF/TTF) results are also activated and
     /// tracked in the library; web (WOFF/WOFF2) results are just saved.
