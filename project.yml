@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
 targets:
   WOFF2Kit:
     type: library.static
@@ -41,6 +46,19 @@ targets:
       - FontManager
     dependencies:
       - target: WOFF2Kit
+      - package: Sparkle
+    info:
+      path: FontManager/Info.plist
+      properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: "public.app-category.utilities"
+        NSHumanReadableCopyright: "© 2026 Trey Hardin · MIT Licensed"
+        # Sparkle auto-update
+        SUFeedURL: "https://github.com/treyhardin/font-manager/releases/latest/download/appcast.xml"
+        SUPublicEDKey: "m/iJK41QKnw6jETwwNI/u7nedlGifF6y8VaDi9e2LpY="
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.trumancreative.FontManager
@@ -49,9 +67,6 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.utilities"
-        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Trey Hardin · MIT Licensed"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: FontManager/FontManager-Bridging-Header.h
         HEADER_SEARCH_PATHS:

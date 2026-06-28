@@ -1,9 +1,11 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 @main
 struct FontManagerApp: App {
     private let helpURL = URL(string: "https://github.com/treyhardin/font-manager")!
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     @StateObject private var toastCenter: ToastCenter
     @StateObject private var fontService: FontService
     @StateObject private var conversion: ConversionManager
@@ -25,6 +27,9 @@ struct FontManagerApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: 1000, height: 700)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
             CommandGroup(after: .newItem) {
                 Button("Convert a Font…") {
                     conversion.showConvert = true
@@ -45,6 +50,10 @@ struct FontManagerApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
             }
+        }
+
+        Settings {
+            SettingsView(updater: updaterController.updater)
         }
     }
 }
