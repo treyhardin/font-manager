@@ -130,26 +130,28 @@ struct EmptyDetailView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "arrow.triangle.2.circlepath")
+            Image(systemName: "textformat")
                 .font(.system(size: 42))
                 .foregroundStyle(.tertiary)
 
             VStack(spacing: 4) {
                 Text("Select a font to preview")
                     .font(.title3)
-                Text("…or drop font files anywhere to convert them between web and desktop formats — WOFF, WOFF2, OTF, and TTF, in either direction.")
+                Text("Pick a family from the list to see every style, set your sample text and size, and activate or download it.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
 
-            Button {
-                conversion.showConvert = true
-            } label: {
-                Label("Convert a Font…", systemImage: "arrow.triangle.2.circlepath")
+            // Convert is a secondary offer here — the primary task is choosing a font.
+            HStack(spacing: 4) {
+                Text("Have a web font?")
+                    .foregroundStyle(.secondary)
+                Button("Convert it") { conversion.showConvert = true }
+                    .buttonStyle(.link)
             }
-            .controlSize(.large)
+            .font(.callout)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

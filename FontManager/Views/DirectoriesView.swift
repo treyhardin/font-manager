@@ -79,7 +79,7 @@ struct DirectoryRow: View {
     var body: some View {
         HStack {
             Image(systemName: "folder.fill")
-                .foregroundStyle(.blue)
+                .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(URL(fileURLWithPath: path).lastPathComponent)

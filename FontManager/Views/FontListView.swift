@@ -8,30 +8,24 @@ struct FontListView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Compact filter header
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 SidebarSearchField(text: $fontService.searchText, focused: $searchFocused)
 
-                Picker("Source", selection: $fontService.filterSource) {
-                    ForEach(FontService.FontSourceFilter.allCases, id: \.self) { filter in
-                        Text(filter.rawValue).tag(filter)
+                // Source and status as self-describing dropdowns on one row, so the filter
+                // header stays short and the two "All" defaults aren't ambiguous.
+                HStack(spacing: 6) {
+                    FilterMenuPicker(title: "Source", selection: $fontService.filterSource) { source in
+                        fontService.count(for: source)
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                Picker("Activation", selection: $fontService.filterActivation) {
-                    ForEach(FontService.ActivationFilter.allCases, id: \.self) { filter in
-                        Text(filter.rawValue).tag(filter)
+                    FilterMenuPicker(title: "Status", selection: $fontService.filterStatus) { status in
+                        fontService.count(for: status)
                     }
+                    Spacer(minLength: 0)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
 
-                if fontService.showMissingOnly {
-                    // In "Needs Style" mode everything is unclassified, so Style/Width filters don't apply.
-                    needsStyleToggle
-                } else {
-                    FilterSection(title: "Style") {
+                // Style/Width are unresolved when filtering to "Missing Info", so hide them there.
+                if fontService.filterStatus != .missingInfo {
+                    FilterSection(title: "Style", activeValue: fontService.filterClassification?.rawValue) {
                         ForEach(fontService.availableClassifications) { classification in
                             FilterIconButton(
                                 isOn: fontService.filterClassification == classification,
@@ -48,7 +42,7 @@ struct FontListView: View {
                     }
 
                     if fontService.availableWidths.count > 1 {
-                        FilterSection(title: "Width") {
+                        FilterSection(title: "Width", activeValue: fontService.filterWidth?.rawValue) {
                             ForEach(fontService.availableWidths) { width in
                                 FilterIconButton(
                                     isOn: fontService.filterWidth == width,
@@ -61,10 +55,6 @@ struct FontListView: View {
                                 }
                             }
                         }
-                    }
-
-                    if fontService.missingCount > 0 {
-                        needsStyleToggle
                     }
                 }
             }
@@ -92,15 +82,6 @@ struct FontListView: View {
         .onChange(of: fontService.searchFocusToken) { _, _ in
             searchFocused = true
         }
-    }
-
-    private var needsStyleToggle: some View {
-        Toggle(isOn: $fontService.showMissingOnly) {
-            Label("Needs Style (\(fontService.missingCount))", systemImage: "questionmark.circle")
-        }
-        .toggleStyle(.button)
-        .controlSize(.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var emptyState: some View {
@@ -169,22 +150,115 @@ struct SidebarSearchField: View {
     }
 }
 
-/// A titled row of filter buttons that scrolls horizontally if it overflows.
+/// A compact, self-describing dropdown for a sidebar filter (e.g. "Source · All").
+/// Replaces stacked segmented controls so the filter header stays short.
+struct FilterMenuPicker<T>: View where T: CaseIterable & Hashable & RawRepresentable, T.RawValue == String {
+    let title: String
+    @Binding var selection: T
+    /// Optional count shown after an option in the open menu (e.g. "Missing Info (437)").
+    var badge: ((T) -> Int?)? = nil
+
+    var body: some View {
+        Menu {
+            ForEach(Array(T.allCases), id: \.self) { option in
+                let label = badge?(option).map { "\(option.rawValue) (\($0))" } ?? option.rawValue
+                Button {
+                    selection = option
+                } label: {
+                    if option == selection {
+                        Label(label, systemImage: "checkmark")
+                    } else {
+                        Text(label)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title).foregroundStyle(.secondary)
+                Text(selection.rawValue).fontWeight(.medium)
+            }
+            .font(.callout)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+    }
+}
+
+/// A titled group of filter buttons that wraps onto multiple rows when it can't fit,
+/// so the sidebar never needs horizontal scrolling and content never overflows its width.
+/// When a value is selected, the title shows it (e.g. "STYLE · Serif") so the
+/// otherwise-unlabeled specimen glyphs are legible once chosen.
 struct FilterSection<Content: View>: View {
     let title: String
+    var activeValue: String? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) { content }
+            HStack(spacing: 4) {
+                Text(title.uppercased())
+                    .foregroundStyle(.secondary)
+                if let activeValue {
+                    Text("· \(activeValue)")
+                        .foregroundStyle(.tint)
+                }
             }
+            .font(.caption2)
+            .fontWeight(.semibold)
+            FlowLayout(spacing: 6) { content }
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Left-to-right wrapping layout: places children on a row until the next one would
+/// overflow the proposed width, then wraps. Keeps filter chips fully visible at any
+/// sidebar width without horizontal scrolling.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widestRow: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            widestRow = max(widestRow, x - spacing)
+        }
+
+        let width = maxWidth == .infinity ? widestRow : maxWidth
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + size.width > bounds.maxX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 
@@ -269,11 +343,6 @@ struct FontRowView: View {
                         Text("·")
                     }
                     Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
-                    if case .custom(let dir) = font.source {
-                        Text("·")
-                        Text(URL(fileURLWithPath: dir).lastPathComponent)
-                            .truncationMode(.head)
-                    }
                     if case .imported = font.source {
                         Text("·")
                         Text("Imported")

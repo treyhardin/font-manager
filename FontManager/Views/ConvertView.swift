@@ -23,7 +23,7 @@ struct ConvertView: View {
                 Text("Convert Font").font(.headline)
                 Spacer()
                 Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding()
 
@@ -119,7 +119,7 @@ struct ConvertView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Download as")
+                Text("Convert \(uploaded.sourceExtension.uppercased()) to")
                     .font(.subheadline)
                     .fontWeight(.semibold)
 

@@ -8,11 +8,9 @@ class FontService: ObservableObject {
     @Published var searchText: String = ""
     @Published var customDirectories: [String] = []
     @Published var filterSource: FontSourceFilter = .all
-    @Published var filterActivation: ActivationFilter = .all
+    @Published var filterStatus: StatusFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
-    /// When on, show only fonts whose Style is still unresolved (composes with the others).
-    @Published var showMissingOnly = false
     /// Selected font ids (multi-selection), kept here so filtering can keep selected rows visible.
     @Published var selection: Set<String> = []
     /// Incremented to request the search field take focus (Cmd+F).
@@ -49,10 +47,11 @@ class FontService: ObservableObject {
         case custom = "Custom"
     }
 
-    enum ActivationFilter: String, CaseIterable {
+    enum StatusFilter: String, CaseIterable {
         case all = "All"
         case active = "Active"
         case inactive = "Inactive"
+        case missingInfo = "Missing Info"
     }
 
     // MARK: - Effective values (system value unless the user overrode it)
@@ -102,9 +101,28 @@ class FontService: ObservableObject {
         }
     }
 
-    /// Number of fonts still missing a Style (drives the "Needs Style" affordance).
+    /// Number of fonts still missing a Style (drives the "Missing Info" count).
     var missingCount: Int {
         fonts.filter(isMissingInfo).count
+    }
+
+    /// Total families for a source bucket, independent of other filters (for the dropdown count).
+    func count(for source: FontSourceFilter) -> Int {
+        switch source {
+        case .all: return fonts.count
+        case .system: return fonts.filter { $0.source == .system }.count
+        case .custom: return fonts.filter { if case .system = $0.source { return false }; return true }.count
+        }
+    }
+
+    /// Total families for a status bucket, independent of other filters (for the dropdown count).
+    func count(for status: StatusFilter) -> Int {
+        switch status {
+        case .all: return fonts.count
+        case .active: return fonts.filter { $0.isActive }.count
+        case .inactive: return fonts.filter { !$0.isActive }.count
+        case .missingInfo: return missingCount
+        }
     }
 
     func selectAllVisible() {
@@ -117,14 +135,13 @@ class FontService: ObservableObject {
 
     /// True when any filter (beyond the default "All" everything) is active.
     var hasActiveFilters: Bool {
-        filterSource != .all || filterActivation != .all || showMissingOnly
+        filterSource != .all || filterStatus != .all
             || filterClassification != nil || filterWidth != nil || !searchText.isEmpty
     }
 
     func clearFilters() {
         filterSource = .all
-        filterActivation = .all
-        showMissingOnly = false
+        filterStatus = .all
         filterClassification = nil
         filterWidth = nil
         searchText = ""
@@ -146,25 +163,24 @@ class FontService: ObservableObject {
     var filteredFonts: [FontItem] {
         var result = fontsForCurrentSource()
 
-        // Keep already-selected rows visible even after they stop matching, so editing a
-        // font's Style in "Needs Style" mode doesn't make it vanish out from under you.
-        if showMissingOnly {
-            result = result.filter { isMissingInfo($0) || selection.contains($0.id) }
-        }
-
-        switch filterActivation {
+        // Already-selected rows stay visible even after they stop matching, so editing a
+        // font's Style in "Missing Info" mode doesn't make it vanish out from under you.
+        switch filterStatus {
         case .all: break
         case .active: result = result.filter { $0.isActive || selection.contains($0.id) }
         case .inactive: result = result.filter { !$0.isActive || selection.contains($0.id) }
+        case .missingInfo: result = result.filter { isMissingInfo($0) || selection.contains($0.id) }
         }
 
-        // Sub-filters are skipped in missing mode and ignored if their value isn't available
-        // (prevents a permanently-empty list when the selected bucket disappears).
-        if !showMissingOnly, let classification = filterClassification, availableClassifications.contains(classification) {
+        // Style/Width are unresolved in "Missing Info" mode, so those sub-filters don't apply
+        // there; elsewhere they're ignored if their value isn't available (prevents a
+        // permanently-empty list when the selected bucket disappears).
+        let showingMissing = filterStatus == .missingInfo
+        if !showingMissing, let classification = filterClassification, availableClassifications.contains(classification) {
             result = result.filter { effectiveClassification($0) == classification || selection.contains($0.id) }
         }
 
-        if !showMissingOnly, let width = filterWidth, availableWidths.contains(width) {
+        if !showingMissing, let width = filterWidth, availableWidths.contains(width) {
             result = result.filter { effectiveWidth($0) == width || selection.contains($0.id) }
         }
 

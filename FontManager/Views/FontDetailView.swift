@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreText
 
 struct FontDetailView: View {
     @EnvironmentObject var fontService: FontService
@@ -8,6 +9,12 @@ struct FontDetailView: View {
     // persist as you move between fonts and across launches.
     @AppStorage("preview.text") private var previewText: String = "The quick brown fox jumps over the lazy dog"
     @AppStorage("preview.size") private var previewSize: Double = 32
+    // Format / glyph count / file size for the selected family, computed off the main
+    // thread when the font changes (not on every slider drag).
+    @State private var metadata: String?
+
+    static let samplePangram = "The quick brown fox jumps over the lazy dog"
+    static let sampleParagraph = "Sphinx of black quartz, judge my vow. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!"
 
     private var classificationBinding: Binding<FontClassification> {
         Binding(
@@ -58,7 +65,7 @@ struct FontDetailView: View {
                                 }
                             }
 
-                            Text("\(font.members.count) style\(font.members.count == 1 ? "" : "s")")
+                            Text(metadataSummary)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -77,17 +84,34 @@ struct FontDetailView: View {
                         .fixedSize()
                     }
 
-                    Button(font.isActive ? "Deactivate" : "Activate") {
-                        fontService.toggleFont(font)
+                    // Activate is the affirmative action (prominent accent); deactivating is
+                    // reversible and harmless, so it's a plain button rather than a red one.
+                    if font.isActive {
+                        Button("Deactivate") { fontService.toggleFont(font) }
+                            .buttonStyle(.bordered)
+                    } else {
+                        Button("Activate") { fontService.toggleFont(font) }
+                            .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(font.isActive ? .red : .green)
                 }
 
                 Divider()
 
                 // Preview controls
                 HStack {
+                    Menu {
+                        Button("Pangram") { previewText = Self.samplePangram }
+                        Button("Paragraph") { previewText = Self.sampleParagraph }
+                        Button("Uppercase") { previewText = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" }
+                        Button("Lowercase") { previewText = "abcdefghijklmnopqrstuvwxyz" }
+                        Button("Numerals & Symbols") { previewText = "0123456789 & .,;:!?@#$%" }
+                    } label: {
+                        Image(systemName: "text.quote")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Insert sample text")
+
                     TextField("Preview text", text: $previewText)
                         .textFieldStyle(.roundedBorder)
 
@@ -141,9 +165,69 @@ struct FontDetailView: View {
                         Divider()
                     }
                 }
+
+                // Full character set in the family's first style — gives a single-style
+                // font something substantial to show and is useful for every family.
+                if let first = font.members.first {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("CHARACTER SET")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                            Text("abcdefghijklmnopqrstuvwxyz")
+                            Text("0123456789 &.,;:!?‘’“”()[]/@#$%*")
+                        }
+                        .font(FontPreview.font(for: first, size: 24, isActive: font.isActive))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.4)
+                        .textSelection(.enabled)
+                    }
+                }
             }
             .padding(24)
         }
+        .task(id: font.id) {
+            let summary = await Task.detached { FontDetailView.metadata(for: font) }.value
+            metadata = summary
+        }
+    }
+
+    /// Style count, plus format / glyph count / file size when available.
+    private var metadataSummary: String {
+        let styles = "\(font.members.count) style\(font.members.count == 1 ? "" : "s")"
+        if let metadata { return "\(styles) · \(metadata)" }
+        return styles
+    }
+
+    /// Reads format, glyph count and file size for the family's first face. Runs off the
+    /// main actor (it parses the font file) so it doesn't stutter the size slider.
+    nonisolated private static func metadata(for font: FontItem) -> String? {
+        guard let member = font.members.first else { return nil }
+        var parts: [String] = []
+
+        if let ext = member.fileURL?.pathExtension.lowercased() {
+            switch ext {
+            case "otf": parts.append("OpenType")
+            case "ttf": parts.append("TrueType")
+            case "ttc": parts.append("TrueType Collection")
+            case "dfont": parts.append("dfont")
+            case "": break
+            default: parts.append(ext.uppercased())
+            }
+        }
+
+        if let ctFont = FontConversionService.ctFont(for: member) {
+            let count = CTFontGetGlyphCount(ctFont)
+            if count > 0 { parts.append("\(count.formatted()) glyphs") }
+        }
+
+        if let size = try? member.fileURL?.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 {
+            parts.append(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
@@ -205,6 +289,7 @@ struct MultiFontDetailView: View {
                                 } label: {
                                     Label("Reset", systemImage: "arrow.uturn.backward")
                                 }
+                                .buttonStyle(.borderless)
                                 .help("Reset Style and Width for all selected fonts")
                             }
                         }
@@ -224,7 +309,6 @@ struct MultiFontDetailView: View {
 
                     Button("Activate") { fontService.setActive(true, for: fonts) }
                         .buttonStyle(.borderedProminent)
-                        .tint(.green)
                     Button("Deactivate") { fontService.setActive(false, for: fonts) }
                         .buttonStyle(.bordered)
                 }
