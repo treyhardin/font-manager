@@ -11,6 +11,10 @@ class FontService: ObservableObject {
     @Published var filterStatus: StatusFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
+    /// How the sidebar list is ordered. Persisted across launches.
+    @Published var sortOrder: SortOrder = .nameAscending {
+        didSet { UserDefaults.standard.set(sortOrder.rawValue, forKey: sortOrderKey) }
+    }
     /// Selected font ids (multi-selection), kept here so filtering can keep selected rows visible.
     @Published var selection: Set<String> = []
     /// Incremented to request the search field take focus (Cmd+F).
@@ -22,6 +26,7 @@ class FontService: ObservableObject {
 
     private let directoriesKey = "customFontDirectories"
     private let importedKey = "importedFontFiles"
+    private let sortOrderKey = "fontSortOrder"
     nonisolated private static let fontExtensions: Set<String> = ["ttf", "otf", "ttc", "dfont"]
 
     /// Paths of individually-converted fonts the app activates on launch.
@@ -52,6 +57,41 @@ class FontService: ObservableObject {
         case active = "Active"
         case inactive = "Inactive"
         case missingInfo = "Missing Info"
+    }
+
+    enum SortOrder: String, CaseIterable, Identifiable {
+        case nameAscending = "Name (A–Z)"
+        case nameDescending = "Name (Z–A)"
+        case mostRecent = "Most Recent"
+        case oldest = "Oldest"
+        case mostStyles = "Most Styles"
+
+        var id: String { rawValue }
+
+        /// Sort predicate for two families. Ties (and undated fonts under date sorts) fall
+        /// back to A–Z so the order is always stable.
+        func areInIncreasingOrder(_ a: FontItem, _ b: FontItem) -> Bool {
+            func byName(ascending: Bool = true) -> Bool {
+                let result = a.familyName.localizedCaseInsensitiveCompare(b.familyName)
+                return ascending ? result == .orderedAscending : result == .orderedDescending
+            }
+            switch self {
+            case .nameAscending: return byName()
+            case .nameDescending: return byName(ascending: false)
+            case .mostRecent, .oldest:
+                switch (a.dateAdded, b.dateAdded) {
+                case let (x?, y?):
+                    if x == y { return byName() }
+                    return self == .mostRecent ? x > y : x < y
+                case (_?, nil): return true   // dated fonts sort ahead of undated ones
+                case (nil, _?): return false
+                case (nil, nil): return byName()
+                }
+            case .mostStyles:
+                if a.members.count == b.members.count { return byName() }
+                return a.members.count > b.members.count
+            }
+        }
     }
 
     // MARK: - Effective values (system value unless the user overrode it)
@@ -191,7 +231,7 @@ class FontService: ObservableObject {
             }
         }
 
-        return result
+        return result.sorted(by: sortOrder.areInIncreasingOrder)
     }
 
     private let toast: ToastCenter
@@ -200,6 +240,9 @@ class FontService: ObservableObject {
         self.toast = toast
         customDirectories = UserDefaults.standard.stringArray(forKey: directoriesKey) ?? []
         importedPaths = UserDefaults.standard.stringArray(forKey: importedKey) ?? []
+        if let raw = UserDefaults.standard.string(forKey: sortOrderKey), let saved = SortOrder(rawValue: raw) {
+            sortOrder = saved
+        }
         loadOverrides()
         loadAllFonts()
     }
@@ -385,6 +428,19 @@ class FontService: ObservableObject {
         }
     }
 
+    /// Newest "date added" across a family's files, matching Finder's Date Added where the
+    /// volume records it, otherwise creation date. Drives "Recently Added" sorting.
+    nonisolated private static func addedDate(for members: [FontMember]) -> Date? {
+        let urls = Set(members.compactMap { $0.fileURL })
+        var latest: Date?
+        for url in urls {
+            let values = try? url.resourceValues(forKeys: [.addedToDirectoryDateKey, .creationDateKey])
+            guard let date = values?.addedToDirectoryDate ?? values?.creationDate else { continue }
+            if latest == nil || date > latest! { latest = date }
+        }
+        return latest
+    }
+
     nonisolated private static func buildSystemItems(_ raw: [RawFamily]) -> [FontItem] {
         raw.map { family in
             let members = family.members.map { rawMember -> FontMember in
@@ -404,7 +460,7 @@ class FontService: ObservableObject {
             let width = members.first.map {
                 FontClassifier.width(postScriptName: $0.postScriptName, name: family.family)
             } ?? .regular
-            return FontItem(familyName: family.family, members: members, source: .system, classification: classification, width: width)
+            return FontItem(familyName: family.family, members: members, source: .system, classification: classification, width: width, dateAdded: addedDate(for: members))
         }
     }
 
@@ -460,7 +516,8 @@ class FontService: ObservableObject {
                 isActive: false,
                 source: .custom(directory: value.directory),
                 classification: FontClassifier.classify(descriptor: value.descriptor, name: value.family),
-                width: FontClassifier.width(descriptor: value.descriptor, name: value.family)
+                width: FontClassifier.width(descriptor: value.descriptor, name: value.family),
+                dateAdded: addedDate(for: value.members)
             )
         }
     }
@@ -514,7 +571,8 @@ class FontService: ObservableObject {
             let width = descriptorByFamily[family].map {
                 FontClassifier.width(descriptor: $0, name: family)
             } ?? .regular
-            return FontItem(familyName: family, members: membersByFamily[family] ?? [], isActive: true, source: .imported, classification: classification, width: width)
+            let members = membersByFamily[family] ?? []
+            return FontItem(familyName: family, members: members, isActive: true, source: .imported, classification: classification, width: width, dateAdded: addedDate(for: members))
         }
         return (items, livePaths)
     }

@@ -39,6 +39,8 @@ available (toggle in **Settings → Updates**).
 - **Filter by classification** — serif, sans-serif, slab serif, script, display,
   monospaced, or symbol, derived automatically from each font (no tagging needed).
 - **Filter by width** — condensed, regular, or expanded.
+- **Sort** the list by name (A–Z or Z–A), date added (most recent or oldest), or
+  number of styles. Your choice persists across launches.
 - **Override Style/Width** — when auto-detection is missing or wrong, set the values
   yourself (per font or across a multi-selection). Overrides live only in this app
   (font files are untouched), persist on-device, and revert per-field. A **Needs

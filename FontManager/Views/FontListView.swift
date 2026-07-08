@@ -21,6 +21,7 @@ struct FontListView: View {
                         fontService.count(for: status)
                     }
                     Spacer(minLength: 0)
+                    SortMenu(selection: $fontService.sortOrder)
                 }
 
                 // Style/Width are unresolved when filtering to "Missing Info", so hide them there.
@@ -183,6 +184,36 @@ struct FilterMenuPicker<T>: View where T: CaseIterable & Hashable & RawRepresent
         .buttonStyle(.bordered)
         .controlSize(.small)
         .fixedSize()
+    }
+}
+
+/// A compact icon menu for choosing the sidebar sort order. Icon-only to stay narrow
+/// next to the Source/Status pickers; the open menu checkmarks the active option.
+struct SortMenu: View {
+    @Binding var selection: FontService.SortOrder
+
+    var body: some View {
+        Menu {
+            ForEach(FontService.SortOrder.allCases) { order in
+                Button {
+                    selection = order
+                } label: {
+                    if order == selection {
+                        Label(order.rawValue, systemImage: "checkmark")
+                    } else {
+                        Text(order.rawValue)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+        .help("Sort order")
+        .accessibilityLabel("Sort order")
     }
 }
 

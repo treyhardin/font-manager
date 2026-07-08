@@ -53,8 +53,11 @@ struct FontItem: Identifiable, Hashable, Sendable {
     let source: FontSource
     let classification: FontClassification
     let width: FontWidth
+    /// When the font's file(s) were added to disk (newest across the family), for "Recently
+    /// Added" sorting. `nil` when no backing file exposes a date.
+    let dateAdded: Date?
 
-    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified, width: FontWidth = .regular) {
+    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified, width: FontWidth = .regular, dateAdded: Date? = nil) {
         self.id = Self.makeID(familyName: familyName, source: source)
         self.familyName = familyName
         self.members = members
@@ -62,6 +65,7 @@ struct FontItem: Identifiable, Hashable, Sendable {
         self.source = source
         self.classification = classification
         self.width = width
+        self.dateAdded = dateAdded
     }
 
     /// IDs are namespaced by source so an imported font can share a family name with
