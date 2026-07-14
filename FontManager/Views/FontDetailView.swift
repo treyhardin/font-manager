@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreText
+import AppKit
 
 struct FontDetailView: View {
     @EnvironmentObject var fontService: FontService
@@ -7,14 +8,17 @@ struct FontDetailView: View {
     let font: FontItem
     // AppStorage (not @State tied to the font's identity) so the sample text and size
     // persist as you move between fonts and across launches.
-    @AppStorage("preview.text") private var previewText: String = "The quick brown fox jumps over the lazy dog"
+    // Blank shows each style's family name as its specimen (like the grid); typing overrides.
+    @AppStorage("preview.text") private var previewText: String = ""
     @AppStorage("preview.size") private var previewSize: Double = 32
     // Format / glyph count / file size for the selected family, computed off the main
     // thread when the font changes (not on every slider drag).
     @State private var metadata: String?
+    // Details are view-only until Edit is tapped, which swaps in Style/Width/Foundry controls.
+    @State private var isEditing = false
+    // Draft foundry text bound to the combo box while editing; committed as an override.
+    @State private var foundryDraft = ""
 
-    static let samplePangram = "The quick brown fox jumps over the lazy dog"
-    static let sampleParagraph = "Sphinx of black quartz, judge my vow. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!"
 
     private var classificationBinding: Binding<FontClassification> {
         Binding(
@@ -32,165 +36,278 @@ struct FontDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(font.familyName)
-                            .font(.title)
-                            .fontWeight(.bold)
-
-                        HStack(spacing: 10) {
-                            HStack(spacing: 3) {
-                                Picker("Style", selection: classificationBinding) {
-                                    ForEach(FontClassification.allCases) { classification in
-                                        Text(classification.rawValue).tag(classification)
-                                    }
-                                }
-                                .fixedSize()
-                                if fontService.isClassificationOverridden(font) {
-                                    RevertButton { fontService.resetClassificationOverride(for: font) }
-                                }
-                            }
-
-                            HStack(spacing: 3) {
-                                Picker("Width", selection: widthBinding) {
-                                    ForEach(FontWidth.allCases) { width in
-                                        Text(width.rawValue).tag(width)
-                                    }
-                                }
-                                .fixedSize()
-                                if fontService.isWidthOverridden(font) {
-                                    RevertButton { fontService.resetWidthOverride(for: font) }
-                                }
-                            }
-
-                            Text(metadataSummary)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    if font.members.count > 1 {
-                        Menu("Download All") {
-                            ForEach(ExportFormat.supported) { format in
-                                Button(format.displayName) {
-                                    conversion.downloadAll(font.members, family: font.familyName, as: format)
-                                }
-                            }
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                    }
-
-                    // Activate is the affirmative action (prominent accent); deactivating is
-                    // reversible and harmless, so it's a plain button rather than a red one.
-                    if font.isActive {
-                        Button("Deactivate") { fontService.toggleFont(font) }
-                            .buttonStyle(.bordered)
-                    } else {
-                        Button("Activate") { fontService.toggleFont(font) }
-                            .buttonStyle(.borderedProminent)
-                    }
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                VStack(alignment: .leading, spacing: 24) {
+                    BackToGridButton()
+                    header
+                    heroSpecimen
                 }
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
+                .padding(.bottom, 4)
 
-                Divider()
-
-                // Preview controls
-                HStack {
-                    Menu {
-                        Button("Pangram") { previewText = Self.samplePangram }
-                        Button("Paragraph") { previewText = Self.sampleParagraph }
-                        Button("Uppercase") { previewText = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" }
-                        Button("Lowercase") { previewText = "abcdefghijklmnopqrstuvwxyz" }
-                        Button("Numerals & Symbols") { previewText = "0123456789 & .,;:!?@#$%" }
-                    } label: {
-                        Image(systemName: "text.quote")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Insert sample text")
-
-                    TextField("Preview text", text: $previewText)
-                        .textFieldStyle(.roundedBorder)
-
-                    Slider(value: $previewSize, in: 10...120, step: 2) {
-                        Text("Size")
-                    }
-                    .frame(width: 150)
-
-                    Text("\(Int(previewSize))px")
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .frame(width: 40)
-                }
-
-                // Font styles preview
-                ForEach(font.members) { member in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text(member.styleName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textCase(.uppercase)
-
-                            Spacer()
-
-                            Menu("Download") {
-                                ForEach(ExportFormat.supported) { format in
-                                    Button(format.displayName) {
-                                        conversion.download(member, as: format)
-                                    }
-                                }
-                            }
-                            .menuStyle(.borderlessButton)
-                            .fixedSize()
-                            .font(.caption)
+                // Preview controls pin to the top so size/text stay reachable while
+                // scrolling a family with many styles.
+                Section {
+                    VStack(alignment: .leading, spacing: 24) {
+                        ForEach(font.members) { member in
+                            styleRow(member)
                         }
-
-                        Text(previewText)
-                            .font(FontPreview.font(for: member, size: previewSize, isActive: font.isActive))
-                            .lineLimit(nil)
-                            .textSelection(.enabled)
-
-                        if let url = member.fileURL {
-                            Text(url.path)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                        }
-
-                        Divider()
+                        characterSet
                     }
-                }
-
-                // Full character set in the family's first style — gives a single-style
-                // font something substantial to show and is useful for every family.
-                if let first = font.members.first {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("CHARACTER SET")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-                            Text("abcdefghijklmnopqrstuvwxyz")
-                            Text("0123456789 &.,;:!?‘’“”()[]/@#$%*")
-                        }
-                        .font(FontPreview.font(for: first, size: 24, isActive: font.isActive))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.4)
-                        .textSelection(.enabled)
-                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
+                } header: {
+                    previewControls
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
+                        .background(.regularMaterial)
+                        .overlay(alignment: .bottom) { Divider() }
                 }
             }
-            .padding(24)
         }
         .task(id: font.id) {
             let summary = await Task.detached { FontDetailView.metadata(for: font) }.value
             metadata = summary
+        }
+        .onChange(of: font.id) { _, _ in
+            isEditing = false   // don't carry edit mode across fonts
+        }
+        .onChange(of: isEditing) { _, editing in
+            if editing { foundryDraft = fontService.effectiveFoundry(font) ?? "" }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text(font.familyName)
+                        .font(.title)
+                        .fontWeight(.bold)
+
+                    HStack(spacing: 5) {
+                        ActivationDot(isActive: font.isActive)
+                        Text(font.isActive ? "Active" : "Inactive")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                detailsBlock
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                if font.members.count > 1 {
+                    Menu {
+                        ForEach(ExportFormat.supported) { format in
+                            Button(format.displayName) {
+                                conversion.downloadAll(font.members, family: font.familyName, as: format)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Download all styles…")
+                }
+
+                Button(isEditing ? "Done" : "Edit") {
+                    isEditing.toggle()
+                }
+                .buttonStyle(.bordered)
+
+                // Activate is the affirmative action (prominent accent); deactivating is
+                // reversible and harmless, so it's a plain button, not a red one.
+                if font.isActive {
+                    Button("Deactivate") { fontService.toggleFont(font) }
+                        .buttonStyle(.bordered)
+                } else {
+                    Button("Activate") { fontService.toggleFont(font) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    /// Large specimen of the family name (or the typed preview text) set in its own
+    /// typeface — the visual anchor for the pane.
+    private var heroSpecimen: some View {
+        Text(previewText.isEmpty ? font.familyName : previewText)
+            .font(font.members.first.map { FontPreview.font(for: $0, size: 56, isActive: font.isActive) } ?? .system(size: 56))
+            .lineLimit(2)
+            .minimumScaleFactor(0.4)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The editable preview string and the size slider.
+    private var previewControls: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                TextField("Preview text — blank shows the font name", text: $previewText)
+                    .textFieldStyle(.plain)
+                if !previewText.isEmpty {
+                    Button {
+                        previewText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear preview text")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+
+            Slider(value: $previewSize, in: 10...120)
+                .frame(width: 150)
+
+            Text("\(Int(previewSize))px")
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(width: 42)
+        }
+    }
+
+    /// One style: its name, Reveal-in-Finder + Download actions, and the specimen line.
+    private func styleRow(_ member: FontMember) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Text(member.styleName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Spacer()
+
+                if let url = member.fileURL {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .help("Reveal in Finder")
+                }
+
+                Menu {
+                    ForEach(ExportFormat.supported) { format in
+                        Button(format.displayName) {
+                            conversion.download(member, as: format)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .font(.caption)
+                .help("Download this style…")
+            }
+
+            Text(previewText.isEmpty ? font.familyName : previewText)
+                .font(FontPreview.font(for: member, size: previewSize, isActive: font.isActive))
+                .lineLimit(nil)
+                .textSelection(.enabled)
+        }
+    }
+
+    /// A quick glyph overview in the family's first style.
+    @ViewBuilder
+    private var characterSet: some View {
+        if let first = font.members.first {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CHARACTER SET")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                    Text("abcdefghijklmnopqrstuvwxyz")
+                    Text("0123456789 &.,;:!?‘’“”()[]/@#$%*")
+                }
+                .font(FontPreview.font(for: first, size: 24, isActive: font.isActive))
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .textSelection(.enabled)
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    /// Style / Width / Foundry / Format. View-only until Edit is tapped, which swaps the
+    /// first three for controls (Format stays read-only — it's intrinsic to the file).
+    private var detailsBlock: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if isEditing {
+                detailRow("Style") {
+                    Picker("", selection: classificationBinding) {
+                        ForEach(FontClassification.allCases) { classification in
+                            Text(classification.rawValue).tag(classification)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    if fontService.isClassificationOverridden(font) {
+                        RevertButton { fontService.resetClassificationOverride(for: font) }
+                    }
+                }
+                detailRow("Width") {
+                    Picker("", selection: widthBinding) {
+                        ForEach(FontWidth.allCases) { width in
+                            Text(width.rawValue).tag(width)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    if fontService.isWidthOverridden(font) {
+                        RevertButton { fontService.resetWidthOverride(for: font) }
+                    }
+                }
+                detailRow("Foundry") {
+                    ComboBoxField(
+                        text: $foundryDraft,
+                        options: fontService.allFoundries,
+                        placeholder: "Foundry name",
+                        onCommit: { fontService.setFoundryOverride($0, for: font) }
+                    )
+                    .frame(width: 240)
+                    if fontService.isFoundryOverridden(font) {
+                        RevertButton {
+                            fontService.resetFoundryOverride(for: font)
+                            foundryDraft = fontService.effectiveFoundry(font) ?? ""
+                        }
+                    }
+                }
+            } else {
+                detailRow("Style") { Text(fontService.effectiveClassification(font).rawValue) }
+                detailRow("Width") { Text(fontService.effectiveWidth(font).rawValue) }
+                detailRow("Foundry") { Text(fontService.displayFoundry(font)) }
+            }
+            detailRow("Format") {
+                Text(metadataSummary).foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
+    }
+
+    /// One labeled details row: a fixed-width caption on the left, its value on the right.
+    @ViewBuilder
+    private func detailRow<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 62, alignment: .leading)
+            value()
         }
     }
 
@@ -246,6 +363,66 @@ struct RevertButton: View {
     }
 }
 
+/// A free-text field with a dropdown + inline autocomplete of existing values, backed by
+/// AppKit's `NSComboBox`. Used to edit a font's foundry: type anything, or pick/complete a
+/// name already in your library. `onCommit` fires when editing ends or an item is chosen.
+struct ComboBoxField: NSViewRepresentable {
+    @Binding var text: String
+    var options: [String]
+    var placeholder: String = ""
+    var onCommit: (String) -> Void = { _ in }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let box = NSComboBox()
+        box.completes = true                 // inline autocomplete as you type
+        box.usesDataSource = false
+        box.hasVerticalScroller = true
+        box.numberOfVisibleItems = 8
+        box.placeholderString = placeholder
+        box.delegate = context.coordinator
+        box.addItems(withObjectValues: options)
+        box.stringValue = text
+        return box
+    }
+
+    func updateNSView(_ box: NSComboBox, context: Context) {
+        context.coordinator.parent = self
+        if box.stringValue != text { box.stringValue = text }
+        if (box.objectValues as? [String]) != options {
+            box.removeAllItems()
+            box.addItems(withObjectValues: options)
+        }
+    }
+
+    final class Coordinator: NSObject, NSComboBoxDelegate {
+        var parent: ComboBoxField
+        init(_ parent: ComboBoxField) { self.parent = parent }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let box = notification.object as? NSComboBox else { return }
+            parent.text = box.stringValue
+        }
+
+        func comboBoxSelectionDidChange(_ notification: Notification) {
+            guard let box = notification.object as? NSComboBox else { return }
+            let index = box.indexOfSelectedItem
+            guard index >= 0, let value = box.itemObjectValue(at: index) as? String else { return }
+            // Defer: mutating SwiftUI state inside the notification isn't allowed.
+            DispatchQueue.main.async {
+                self.parent.text = value
+                self.parent.onCommit(value)
+            }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let box = notification.object as? NSComboBox else { return }
+            parent.onCommit(box.stringValue)
+        }
+    }
+}
+
 /// Detail pane shown when multiple fonts are selected: bulk Style/Width editing
 /// (with "Mixed" when they differ), bulk activate/deactivate, and bulk download.
 struct MultiFontDetailView: View {
@@ -256,6 +433,8 @@ struct MultiFontDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                BackToGridButton()
+
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("\(fonts.count) fonts selected")

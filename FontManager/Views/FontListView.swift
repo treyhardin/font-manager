@@ -11,18 +11,18 @@ struct FontListView: View {
             VStack(spacing: 6) {
                 SidebarSearchField(text: $fontService.searchText, focused: $searchFocused)
 
-                // Source and status as self-describing dropdowns on one row, so the filter
-                // header stays short and the two "All" defaults aren't ambiguous.
-                HStack(spacing: 6) {
-                    FilterMenuPicker(title: "Source", selection: $fontService.filterSource) { source in
-                        fontService.count(for: source)
-                    }
-                    FilterMenuPicker(title: "Status", selection: $fontService.filterStatus) { status in
-                        fontService.count(for: status)
-                    }
-                    Spacer(minLength: 0)
-                    SortMenu(selection: $fontService.sortOrder)
+                // Filter and sort inputs stack full-width, each showing its selected value
+                // ("Foundry     All"), so the current state is always visible at a glance.
+                FilterMenuPicker(title: "Source", selection: $fontService.filterSource) { source in
+                    fontService.count(for: source)
                 }
+                FilterMenuPicker(title: "Status", selection: $fontService.filterStatus) { status in
+                    fontService.count(for: status)
+                }
+                if fontService.availableFoundries.count > 1 {
+                    FoundryFilterMenu()
+                }
+                FilterMenuPicker(title: "Sort", selection: $fontService.sortOrder)
 
                 // Style/Width are unresolved when filtering to "Missing Info", so hide them there.
                 if fontService.filterStatus != .missingInfo {
@@ -38,6 +38,12 @@ struct FontListView: View {
                                     .font(styleSpecimenFont(classification, size: styleGlyphSize))
                                     .minimumScaleFactor(0.5)
                                     .lineLimit(1)
+                                    // Center each specimen on its text baseline (not its line
+                                    // box) so differing font metrics — e.g. Rockwell for slab
+                                    // serif — don't sit higher or lower than the others.
+                                    .alignmentGuide(VerticalAlignment.center) { dims in
+                                        dims[.firstTextBaseline] - styleGlyphSize * 0.25
+                                    }
                             }
                         }
                     }
@@ -79,6 +85,7 @@ struct FontListView: View {
             // Sub-filters don't carry across source changes (avoids stale empty lists).
             fontService.filterClassification = nil
             fontService.filterWidth = nil
+            fontService.filterFoundry = nil
         }
         .onChange(of: fontService.searchFocusToken) { _, _ in
             searchFocused = true
@@ -151,8 +158,49 @@ struct SidebarSearchField: View {
     }
 }
 
-/// A compact, self-describing dropdown for a sidebar filter (e.g. "Source · All").
-/// Replaces stacked segmented controls so the filter header stays short.
+/// A full-width menu label showing a field's name on the left and its current value on
+/// the right ("Foundry     All"), drawn as a bordered field to match the search box above.
+struct FilterMenuLabel: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Text(value).fontWeight(.medium).foregroundStyle(.primary).lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+        }
+        .font(.callout)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// Makes a `.menuStyle(.button)` menu fill the sidebar width (the default bordered button
+/// style hugs its content). Styling lives on the label; this just stretches + dims on press.
+struct FilterFieldMenuStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// A self-describing, full-width sidebar dropdown that shows its selected value
+/// ("Source     All"). Used for Source, Status, and Sort.
 struct FilterMenuPicker<T>: View where T: CaseIterable & Hashable & RawRepresentable, T.RawValue == String {
     let title: String
     @Binding var selection: T
@@ -174,46 +222,51 @@ struct FilterMenuPicker<T>: View where T: CaseIterable & Hashable & RawRepresent
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                Text(title).foregroundStyle(.secondary)
-                Text(selection.rawValue).fontWeight(.medium)
-            }
-            .font(.callout)
+            FilterMenuLabel(title: title, value: selection.rawValue)
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .fixedSize()
+        .buttonStyle(FilterFieldMenuStyle())
+        .menuIndicator(.hidden)
+        .frame(maxWidth: .infinity)
     }
 }
 
-/// A compact icon menu for choosing the sidebar sort order. Icon-only to stay narrow
-/// next to the Source/Status pickers; the open menu checkmarks the active option.
-struct SortMenu: View {
-    @Binding var selection: FontService.SortOrder
+/// A self-describing dropdown to filter the list by type foundry (e.g. "Foundry · Klim
+/// Type Foundry"). Dynamic option list, so it can't reuse the enum-based FilterMenuPicker.
+struct FoundryFilterMenu: View {
+    @EnvironmentObject var fontService: FontService
 
     var body: some View {
         Menu {
-            ForEach(FontService.SortOrder.allCases) { order in
+            Button {
+                fontService.filterFoundry = nil
+            } label: {
+                if fontService.filterFoundry == nil {
+                    Label("All", systemImage: "checkmark")
+                } else {
+                    Text("All")
+                }
+            }
+            Divider()
+            ForEach(fontService.availableFoundries, id: \.self) { name in
                 Button {
-                    selection = order
+                    fontService.filterFoundry = name
                 } label: {
-                    if order == selection {
-                        Label(order.rawValue, systemImage: "checkmark")
+                    let label = "\(name) (\(fontService.count(forFoundry: name)))"
+                    if fontService.filterFoundry == name {
+                        Label(label, systemImage: "checkmark")
                     } else {
-                        Text(order.rawValue)
+                        Text(label)
                     }
                 }
             }
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
+            FilterMenuLabel(title: "Foundry", value: fontService.filterFoundry ?? "All")
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .fixedSize()
-        .help("Sort order")
-        .accessibilityLabel("Sort order")
+        .buttonStyle(FilterFieldMenuStyle())
+        .menuIndicator(.hidden)
+        .frame(maxWidth: .infinity)
     }
 }
 

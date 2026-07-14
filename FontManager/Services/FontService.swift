@@ -11,6 +11,8 @@ class FontService: ObservableObject {
     @Published var filterStatus: StatusFilter = .all
     @Published var filterClassification: FontClassification?
     @Published var filterWidth: FontWidth?
+    /// Selected foundry to filter by; `nil` means "All". Matches `displayFoundry`.
+    @Published var filterFoundry: String?
     /// How the sidebar list is ordered. Persisted across launches.
     @Published var sortOrder: SortOrder = .nameAscending {
         didSet { UserDefaults.standard.set(sortOrder.rawValue, forKey: sortOrderKey) }
@@ -23,6 +25,13 @@ class FontService: ObservableObject {
     @Published private(set) var overrides: [String: FontOverride] = [:]
     /// True while fonts are being (re)enumerated in the background.
     @Published private(set) var isLoading = false
+    /// True while a re-scan is in flight (drives the toolbar sync indicator).
+    @Published private(set) var isSyncing = false
+    /// When the library last finished (re)scanning; nil until the first load completes.
+    @Published private(set) var lastSyncedAt: Date?
+
+    /// Watches the custom source folders so dropped-in fonts appear without a relaunch.
+    private var directoryWatcher: DirectoryWatcher?
 
     private let directoriesKey = "customFontDirectories"
     private let importedKey = "importedFontFiles"
@@ -109,6 +118,28 @@ class FontService: ObservableObject {
         overrides[overrideKey(font)]?.width ?? font.width
     }
 
+    /// Foundry label for filtering/display; fonts with no foundry info bucket under "Unknown".
+    static let unknownFoundry = "Unknown"
+
+    /// User's foundry override if set, otherwise the value derived from the font's metadata.
+    func effectiveFoundry(_ font: FontItem) -> String? {
+        overrides[overrideKey(font)]?.foundry ?? font.foundry
+    }
+
+    func displayFoundry(_ font: FontItem) -> String {
+        effectiveFoundry(font) ?? Self.unknownFoundry
+    }
+
+    func isFoundryOverridden(_ font: FontItem) -> Bool {
+        overrides[overrideKey(font)]?.foundry != nil
+    }
+
+    /// Every known foundry name (effective values), for the editor's autocomplete list.
+    var allFoundries: [String] {
+        Set(fonts.compactMap(effectiveFoundry))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     func isOverridden(_ font: FontItem) -> Bool {
         !(overrides[overrideKey(font)]?.isEmpty ?? true)
     }
@@ -176,7 +207,8 @@ class FontService: ObservableObject {
     /// True when any filter (beyond the default "All" everything) is active.
     var hasActiveFilters: Bool {
         filterSource != .all || filterStatus != .all
-            || filterClassification != nil || filterWidth != nil || !searchText.isEmpty
+            || filterClassification != nil || filterWidth != nil
+            || filterFoundry != nil || !searchText.isEmpty
     }
 
     func clearFilters() {
@@ -184,6 +216,7 @@ class FontService: ObservableObject {
         filterStatus = .all
         filterClassification = nil
         filterWidth = nil
+        filterFoundry = nil
         searchText = ""
     }
 
@@ -198,6 +231,23 @@ class FontService: ObservableObject {
     var availableWidths: [FontWidth] {
         let present = Set(fontsForCurrentSource().map(effectiveWidth))
         return FontWidth.allCases.filter { present.contains($0) }
+    }
+
+    /// Foundries present in the current source filter, by font count (most first), with
+    /// "Unknown" always last. Ties break alphabetically for a stable order.
+    var availableFoundries: [String] {
+        var counts: [String: Int] = [:]
+        for font in fontsForCurrentSource() { counts[displayFoundry(font), default: 0] += 1 }
+        let named = counts.keys.filter { $0 != Self.unknownFoundry }.sorted { a, b in
+            counts[a]! != counts[b]! ? counts[a]! > counts[b]!
+                : a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
+        return counts[Self.unknownFoundry] != nil ? named + [Self.unknownFoundry] : named
+    }
+
+    /// Families for a foundry within the current source filter (for the menu badge counts).
+    func count(forFoundry name: String) -> Int {
+        fontsForCurrentSource().filter { displayFoundry($0) == name }.count
     }
 
     var filteredFonts: [FontItem] {
@@ -224,6 +274,10 @@ class FontService: ObservableObject {
             result = result.filter { effectiveWidth($0) == width || selection.contains($0.id) }
         }
 
+        if let foundry = filterFoundry, availableFoundries.contains(foundry) {
+            result = result.filter { displayFoundry($0) == foundry || selection.contains($0.id) }
+        }
+
         if !searchText.isEmpty {
             result = result.filter { font in
                 font.familyName.localizedCaseInsensitiveContains(searchText)
@@ -245,6 +299,13 @@ class FontService: ObservableObject {
         }
         loadOverrides()
         loadAllFonts()
+
+        // Auto-refresh when files are added/removed in a watched source folder.
+        let watcher = DirectoryWatcher { [weak self] in
+            Task { @MainActor in self?.reloadUserFonts() }
+        }
+        watcher.watch(customDirectories)
+        directoryWatcher = watcher
     }
 
     // MARK: - User overrides
@@ -256,6 +317,24 @@ class FontService: ObservableObject {
 
     func setWidthOverride(_ width: FontWidth, for font: FontItem) {
         applyWidth(width, to: font)
+        saveOverrides()
+    }
+
+    /// Sets a free-text foundry override. Empty text, or text matching the metadata-derived
+    /// foundry, clears the override instead (so it reverts to the detected value).
+    func setFoundryOverride(_ raw: String, for font: FontItem) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = overrideKey(font)
+        var override = overrides[key] ?? FontOverride()
+        override.foundry = (trimmed.isEmpty || trimmed == font.foundry) ? nil : trimmed
+        overrides[key] = override.isEmpty ? nil : override
+        saveOverrides()
+    }
+
+    func resetFoundryOverride(for font: FontItem) {
+        guard var override = overrides[overrideKey(font)] else { return }
+        override.foundry = nil
+        overrides[overrideKey(font)] = override.isEmpty ? nil : override
         saveOverrides()
     }
 
@@ -350,6 +429,7 @@ class FontService: ObservableObject {
             if var existing = migrated[family] {
                 existing.classification = existing.classification ?? value.classification
                 existing.width = existing.width ?? value.width
+                existing.foundry = existing.foundry ?? value.foundry
                 migrated[family] = existing
             } else {
                 migrated[family] = value
@@ -384,6 +464,7 @@ class FontService: ObservableObject {
         let imported = importedPaths
         let cachedSystem = cachedSystemItems
         if cachedSystem == nil && fonts.isEmpty { isLoading = true }
+        isSyncing = true
 
         Task.detached(priority: .userInitiated) {
             let system = cachedSystem ?? FontService.buildSystemItems(raw ?? [])
@@ -409,6 +490,8 @@ class FontService: ObservableObject {
                 }
                 self.selection.formIntersection(Set(all.map { $0.id }))
                 self.isLoading = false
+                self.isSyncing = false
+                self.lastSyncedAt = Date()
             }
         }
     }
@@ -441,6 +524,70 @@ class FontService: ObservableObject {
         return latest
     }
 
+    /// A few registered OS/2 vendor IDs, used only as a fallback when a font carries no
+    /// human-readable Manufacturer name (chiefly Apple's system fonts → "Apple").
+    nonisolated private static let vendorIDNames: [String: String] = [
+        "APPL": "Apple", "MONO": "Monotype", "MS": "Microsoft", "LINO": "Linotype",
+        "ADBE": "Adobe", "ADBO": "Adobe", "URW": "URW", "URW+": "URW",
+        "BITS": "Bitstream", "B&H": "Bigelow & Holmes", "GOOG": "Google",
+    ]
+
+    /// Known foundries that publish under several names (sub-brands, legal entities, or a
+    /// bare URL). Any normalized name containing `needle` (case-insensitive) collapses to
+    /// `canonical`, so all variants group under one entry.
+    nonisolated private static let foundryAliases: [(needle: String, canonical: String)] = [
+        ("pangram", "Pangram Pangram Foundry"),
+        ("monotype", "Monotype"),
+        ("adobe", "Adobe"),
+        ("displaay", "Displaay Type Foundry"),
+        ("blaze", "Blaze Type"),
+    ]
+
+    /// Collapse the common legal-entity variants of a foundry name so "Grilli Type",
+    /// "Grilli Type AG", and "Grilli Type GmbH" group together, then apply the curated
+    /// `foundryAliases` for foundries that use unrelated name variants.
+    nonisolated private static func normalizeFoundry(_ raw: String) -> String? {
+        var s = raw.replacingOccurrences(of: "®", with: "")
+                   .replacingOccurrences(of: "™", with: "")
+                   .trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.lowercased().hasPrefix("the ") { s = String(s.dropFirst(4)) }
+        for suffix in ["Corporation", "GmbH", "Inc.", "Inc", "LLC", "Ltd.", "Ltd", "AG", "s.r.o."] {
+            if s.lowercased().hasSuffix(" " + suffix.lowercased()) {
+                s = String(s.dropLast(suffix.count + 1))
+                break
+            }
+        }
+        s = s.trimmingCharacters(in: CharacterSet(charactersIn: " ,."))
+        guard !s.isEmpty else { return nil }
+        let lower = s.lowercased()
+        for alias in foundryAliases where lower.contains(alias.needle) {
+            return alias.canonical
+        }
+        return s
+    }
+
+    /// Normalized foundry for a font: Manufacturer name (name ID 8) when present,
+    /// otherwise a known OS/2 vendor ID. `nil` when neither yields anything usable.
+    nonisolated private static func foundry(for descriptor: CTFontDescriptor) -> String? {
+        let font = CTFontCreateWithFontDescriptor(descriptor, 12, nil)
+        if let manufacturer = CTFontCopyName(font, kCTFontManufacturerNameKey) as String?,
+           let normalized = normalizeFoundry(manufacturer) {
+            return normalized
+        }
+        if let data = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+           data.count >= 62,
+           let tag = String(data: data.subdata(in: 58..<62), encoding: .ascii)?
+               .trimmingCharacters(in: CharacterSet(charactersIn: " \0")),
+           !tag.isEmpty {
+            return vendorIDNames[tag]
+        }
+        return nil
+    }
+
+    nonisolated private static func foundry(forPostScriptName postScriptName: String) -> String? {
+        foundry(for: CTFontDescriptorCreateWithNameAndSize(postScriptName as CFString, 12))
+    }
+
     nonisolated private static func buildSystemItems(_ raw: [RawFamily]) -> [FontItem] {
         raw.map { family in
             let members = family.members.map { rawMember -> FontMember in
@@ -460,7 +607,8 @@ class FontService: ObservableObject {
             let width = members.first.map {
                 FontClassifier.width(postScriptName: $0.postScriptName, name: family.family)
             } ?? .regular
-            return FontItem(familyName: family.family, members: members, source: .system, classification: classification, width: width, dateAdded: addedDate(for: members))
+            let foundry = members.first.flatMap { FontService.foundry(forPostScriptName: $0.postScriptName) }
+            return FontItem(familyName: family.family, members: members, source: .system, classification: classification, width: width, dateAdded: addedDate(for: members), foundry: foundry)
         }
     }
 
@@ -517,7 +665,8 @@ class FontService: ObservableObject {
                 source: .custom(directory: value.directory),
                 classification: FontClassifier.classify(descriptor: value.descriptor, name: value.family),
                 width: FontClassifier.width(descriptor: value.descriptor, name: value.family),
-                dateAdded: addedDate(for: value.members)
+                dateAdded: addedDate(for: value.members),
+                foundry: foundry(for: value.descriptor)
             )
         }
     }
@@ -572,7 +721,8 @@ class FontService: ObservableObject {
                 FontClassifier.width(descriptor: $0, name: family)
             } ?? .regular
             let members = membersByFamily[family] ?? []
-            return FontItem(familyName: family, members: members, isActive: true, source: .imported, classification: classification, width: width, dateAdded: addedDate(for: members))
+            let foundry = descriptorByFamily[family].flatMap { FontService.foundry(for: $0) }
+            return FontItem(familyName: family, members: members, isActive: true, source: .imported, classification: classification, width: width, dateAdded: addedDate(for: members), foundry: foundry)
         }
         return (items, livePaths)
     }
@@ -616,6 +766,7 @@ class FontService: ObservableObject {
 
         customDirectories.append(path)
         saveDirectories()
+        directoryWatcher?.watch(customDirectories)
         reloadUserFonts()
     }
 
@@ -629,6 +780,7 @@ class FontService: ObservableObject {
 
         customDirectories.removeAll { $0 == path }
         saveDirectories()
+        directoryWatcher?.watch(customDirectories)
         reloadUserFonts()
     }
 

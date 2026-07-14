@@ -41,8 +41,9 @@ enum FontWidth: String, CaseIterable, Identifiable, Hashable, Codable {
 struct FontOverride: Codable, Equatable {
     var classification: FontClassification?
     var width: FontWidth?
+    var foundry: String?
 
-    var isEmpty: Bool { classification == nil && width == nil }
+    var isEmpty: Bool { classification == nil && width == nil && foundry == nil }
 }
 
 struct FontItem: Identifiable, Hashable, Sendable {
@@ -56,8 +57,11 @@ struct FontItem: Identifiable, Hashable, Sendable {
     /// When the font's file(s) were added to disk (newest across the family), for "Recently
     /// Added" sorting. `nil` when no backing file exposes a date.
     let dateAdded: Date?
+    /// Type foundry / manufacturer, normalized. `nil` when the font exposes no usable
+    /// foundry info (shown as "Unknown" in the filter).
+    let foundry: String?
 
-    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified, width: FontWidth = .regular, dateAdded: Date? = nil) {
+    init(familyName: String, members: [FontMember], isActive: Bool = true, source: FontSource = .system, classification: FontClassification = .unclassified, width: FontWidth = .regular, dateAdded: Date? = nil, foundry: String? = nil) {
         self.id = Self.makeID(familyName: familyName, source: source)
         self.familyName = familyName
         self.members = members
@@ -66,6 +70,7 @@ struct FontItem: Identifiable, Hashable, Sendable {
         self.classification = classification
         self.width = width
         self.dateAdded = dateAdded
+        self.foundry = foundry
     }
 
     /// IDs are namespaced by source so an imported font can share a family name with

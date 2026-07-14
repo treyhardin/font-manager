@@ -39,12 +39,18 @@ available (toggle in **Settings → Updates**).
 - **Filter by classification** — serif, sans-serif, slab serif, script, display,
   monospaced, or symbol, derived automatically from each font (no tagging needed).
 - **Filter by width** — condensed, regular, or expanded.
+- **Filter by foundry** — read from each font's metadata (with near-complete coverage
+  via a vendor-ID fallback) and grouped so a foundry's variant names collapse together.
 - **Sort** the list by name (A–Z or Z–A), date added (most recent or oldest), or
   number of styles. Your choice persists across launches.
-- **Override Style/Width** — when auto-detection is missing or wrong, set the values
-  yourself (per font or across a multi-selection). Overrides live only in this app
-  (font files are untouched), persist on-device, and revert per-field. A **Needs
-  Style** toggle surfaces every font that still needs classifying.
+- **Card grid** — browse all fonts as specimen cards with your own live preview text;
+  click any card for full detail.
+- **Auto-sync** — source folders are watched, so fonts you drop in appear automatically,
+  with a toolbar indicator showing sync status and when the library last refreshed.
+- **Override Style / Width / Foundry** — when auto-detection is missing or wrong, edit the
+  values yourself (foundry with autocomplete against your existing names). Overrides live
+  only in this app (font files are untouched), persist on-device, and revert per-field.
+  A **Needs Style** toggle surfaces every font that still needs classifying.
 - **Multi-select** to bulk edit, activate/deactivate, or export many families at once.
 - **Group** fonts by family, collection, or source directory.
 - **Download as…** — export any font to your choice of format (desktop OTF/TTF,

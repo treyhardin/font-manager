@@ -23,7 +23,7 @@ struct ContentView: View {
         } detail: {
             switch selectedFonts.count {
             case 0:
-                EmptyDetailView()
+                FontGridView()
             case 1:
                 FontDetailView(font: selectedFonts[0])
             default:
@@ -32,11 +32,25 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, minHeight: 460)
         .toolbar {
+            // Status shows as bare text on the toolbar — no glass container (macOS Tahoe
+            // draws one by default), and a spacer keeps it out of the buttons' container.
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    SyncStatusView()
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    SyncStatusView()
+                }
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     conversion.showConvert = true
                 } label: {
                     Label("Convert", systemImage: "arrow.triangle.2.circlepath")
+                        .padding(.horizontal, 6)
                 }
                 .labelStyle(.titleAndIcon)
                 .help("Upload a font and download it in another format")
@@ -45,6 +59,7 @@ struct ContentView: View {
                     showingDirectories = true
                 } label: {
                     Label("Sources", systemImage: "folder.badge.plus")
+                        .padding(.horizontal, 6)
                 }
                 .labelStyle(.titleAndIcon)
                 .help("Add or remove custom font folders")
@@ -122,37 +137,49 @@ struct ContentView: View {
     }
 }
 
-/// Shown when nothing is selected — previews a font when one's picked, and surfaces
-/// the otherwise-hidden convert-by-drop affordance.
-struct EmptyDetailView: View {
+/// Toolbar sync indicator: a spinning arrow + "Syncing…" while a re-scan runs, otherwise a
+/// green dot + "Last synced …" that keeps its relative time current.
+struct SyncStatusView: View {
     @EnvironmentObject var fontService: FontService
-    @EnvironmentObject var conversion: ConversionManager
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "textformat")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-
-            VStack(spacing: 4) {
-                Text("Select a font to preview")
-                    .font(.title3)
-                Text("Pick a family from the list to see every style, set your sample text and size, and activate or download it.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
+        HStack(spacing: 5) {
+            if fontService.isSyncing {
+                SpinningArrow()
+                Text("Syncing…")
+            } else {
+                Circle()
+                    .fill(.green)
+                    .frame(width: 7, height: 7)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(Self.syncedText(fontService.lastSyncedAt, now: context.date))
+                }
             }
-
-            // Convert is a secondary offer here — the primary task is choosing a font.
-            HStack(spacing: 4) {
-                Text("Have a web font?")
-                    .foregroundStyle(.secondary)
-                Button("Convert it") { conversion.showConvert = true }
-                    .buttonStyle(.link)
-            }
-            .font(.callout)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .help("Source folders auto-refresh when fonts are added or removed")
+        .accessibilityElement(children: .combine)
+    }
+
+    private static func syncedText(_ date: Date?, now: Date) -> String {
+        guard let date else { return "Not synced yet" }
+        if now.timeIntervalSince(date) < 10 { return "Last synced just now" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return "Last synced " + formatter.localizedString(for: date, relativeTo: now)
+    }
+}
+
+/// A continuously rotating refresh glyph, used while syncing.
+struct SpinningArrow: View {
+    @State private var spinning = false
+
+    var body: some View {
+        Image(systemName: "arrow.triangle.2.circlepath")
+            .imageScale(.small)
+            .rotationEffect(.degrees(spinning ? 360 : 0))
+            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: spinning)
+            .onAppear { spinning = true }
     }
 }
