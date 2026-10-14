@@ -12,12 +12,19 @@ enum FontClassification: String, CaseIterable, Identifiable, Hashable, Codable {
     case sansSerif = "Sans Serif"
     case slabSerif = "Slab Serif"
     case script = "Script"
-    case display = "Display"
+    case blackletter = "Blackletter"
     case monospaced = "Monospaced"
     case symbol = "Symbol"
     case unclassified = "Unclassified"
 
     var id: String { rawValue }
+
+    // Tolerant decode: any unrecognized value (e.g. a "Display" override persisted before
+    // that category was removed) maps to `.unclassified` rather than failing the decode.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = FontClassification(rawValue: raw) ?? .unclassified
+    }
 }
 
 enum FontWidth: String, CaseIterable, Identifiable, Hashable, Codable {
@@ -26,14 +33,6 @@ enum FontWidth: String, CaseIterable, Identifiable, Hashable, Codable {
     case expanded = "Expanded"
 
     var id: String { rawValue }
-
-    var symbolName: String {
-        switch self {
-        case .condensed: return "arrow.right.and.line.vertical.and.arrow.left"
-        case .regular: return "equal"
-        case .expanded: return "arrow.left.and.line.vertical.and.arrow.right"
-        }
-    }
 }
 
 /// User-defined overrides for a font's Style/Width, stored only in this app.

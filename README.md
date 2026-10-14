@@ -28,7 +28,8 @@ brew install --cask --no-quarantine treyhardin/tap/font-manager
 `--no-quarantine` skips the Gatekeeper prompt above while the app is unsigned.
 
 The app **updates itself** via Sparkle — you'll be notified when a new version is
-available (toggle in **Settings → Updates**).
+available — a subtle **Update Available** badge appears in the toolbar when a background
+check finds one (toggle in **Settings → Updates**).
 
 ## Features
 
@@ -36,7 +37,7 @@ available (toggle in **Settings → Updates**).
 - **Preview** fonts with customizable sample text and sizes.
 - **Activate / deactivate** fonts on demand, without removing the files.
 - **Search and filter** by font name, family, style, or classification.
-- **Filter by classification** — serif, sans-serif, slab serif, script, display,
+- **Filter by classification** — serif, sans-serif, slab serif, script, blackletter, display,
   monospaced, or symbol, derived automatically from each font (no tagging needed).
 - **Filter by width** — condensed, regular, or expanded.
 - **Filter by foundry** — read from each font's metadata (with near-complete coverage
@@ -60,6 +61,11 @@ available (toggle in **Settings → Updates**).
   font, detects its format, and offers one-click downloads in the other formats
   (WOFF, WOFF2, OTF, TTF). Or drop font files onto the window to add them to your
   library as activated desktop fonts.
+- **MCP server (optional)** — turn on **Settings → MCP Server** to let AI tools on this
+  Mac, or on other machines in your [Tailscale](https://tailscale.com) network, search
+  your library and pull fonts already converted for use (WOFF2/WOFF/OTF/TTF, with a
+  ready-made `@font-face`). Off by default; listens only on localhost and your Tailscale
+  address, never the open network. Editing font attributes is a separate opt-in.
 
 ## Tech Stack
 
@@ -103,14 +109,16 @@ FontManager/
 │   ├── FontListView.swift          # Sidebar font list with search
 │   ├── FontDetailView.swift        # Detail pane: preview + Download menus
 │   ├── DirectoriesView.swift       # Browse fonts by source directory
-│   └── ConversionToast.swift       # Progress/result toast
+│   ├── ConversionToast.swift       # Progress/result toast
+│   └── PhIcon.swift                # Vendored Phosphor icons
 └── Services/
     ├── FontService.swift           # Enumeration, activation, imported fonts, filtering
     ├── FontClassifier.swift        # Serif/sans/script… from CoreText traits + PANOSE
     ├── FontConversionEngine.swift  # Pure SFNT/WOFF plumbing (no app types)
     ├── FontConversionService.swift # Member-aware export/convert bridge
     ├── ConversionManager.swift     # Drives operations + toast state
-    └── WOFF2.swift                 # Swift wrapper over the WOFF2Kit C shim
+    ├── WOFF2.swift                 # Swift wrapper over the WOFF2Kit C shim
+    └── MCP/                        # Optional embedded MCP server
 
 WOFF2Kit/                           # C++ static-lib target
 ├── woff2kit.h / woff2kit.cc        # extern "C" shim over woff2
@@ -150,12 +158,14 @@ resolves). Sparkle signing keys are created once with `scripts/generate-keys.sh`
 
 Font Manager collects **no** data — no analytics, no tracking, no accounts. The only
 network request it makes is an **update check** against this repo's releases, which you
-can turn off in **Settings → Updates**. Your font files are never modified, and Style/Width
+can turn off in **Settings → Updates**. The optional MCP server (off by default) accepts
+connections only from this Mac and your own Tailscale network; it sends nothing anywhere
+on its own. Your font files are never modified, and Style/Width
 overrides are stored locally in `~/Library/Application Support/Font Manager/`.
 
 ## License
 
-TBD for Font Manager itself. Bundled third-party code keeps its own licenses:
+Font Manager is released under the [MIT License](LICENSE). Bundled third-party code keeps its own licenses:
 [`woff2`](ThirdParty/woff2/LICENSE) (MIT) and
 [`brotli`](ThirdParty/brotli/LICENSE) (MIT).
 

@@ -27,7 +27,7 @@ struct ConversionToast: View {
                 Button {
                     center.dismiss()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    PhIcon(.xCircle, size: 15)
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
@@ -54,10 +54,10 @@ struct ConversionToast: View {
             ProgressView()
                 .controlSize(.small)
         case .success:
-            Image(systemName: "checkmark.circle.fill")
+            PhIcon(.checkCircle, size: 16)
                 .foregroundStyle(.green)
         case .failure:
-            Image(systemName: "exclamationmark.triangle.fill")
+            PhIcon(.warning, size: 16)
                 .foregroundStyle(.orange)
         }
     }

@@ -109,11 +109,11 @@ struct FontDetailView: View {
                             }
                         }
                     } label: {
-                        Image(systemName: "square.and.arrow.down")
+                        PhIcon(.downloadSimple, size: 16)
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
                     .menuIndicator(.hidden)
-                    .fixedSize()
                     .help("Download all styles…")
                 }
 
@@ -156,7 +156,7 @@ struct FontDetailView: View {
                     Button {
                         previewText = ""
                     } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                        PhIcon(.xCircle, size: 15).foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear preview text")
@@ -191,7 +191,7 @@ struct FontDetailView: View {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     } label: {
-                        Image(systemName: "folder")
+                        PhIcon(.folder, size: 14)
                     }
                     .buttonStyle(.borderless)
                     .font(.caption)
@@ -205,12 +205,11 @@ struct FontDetailView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    PhIcon(.downloadSimple, size: 16)
                 }
-                .menuStyle(.borderlessButton)
+                .menuStyle(.button)
+                .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .fixedSize()
-                .font(.caption)
                 .help("Download this style…")
             }
 
@@ -354,8 +353,7 @@ struct RevertButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "arrow.uturn.backward")
-                .imageScale(.small)
+            PhIcon(.arrowCounterClockwise, size: 13)
         }
         .buttonStyle(.borderless)
         .help("Reset to the value detected on this system")
@@ -466,7 +464,7 @@ struct MultiFontDetailView: View {
                                 Button {
                                     fontService.resetOverride(for: fonts)
                                 } label: {
-                                    Label("Reset", systemImage: "arrow.uturn.backward")
+                                    PhLabel("Reset", icon: .arrowCounterClockwise)
                                 }
                                 .buttonStyle(.borderless)
                                 .help("Reset Style and Width for all selected fonts")

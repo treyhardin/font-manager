@@ -5,10 +5,11 @@ import Sparkle
 @main
 struct FontManagerApp: App {
     private let helpURL = URL(string: "https://github.com/treyhardin/font-manager")!
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    @StateObject private var updaterModel = UpdaterViewModel()
     @StateObject private var toastCenter: ToastCenter
     @StateObject private var fontService: FontService
     @StateObject private var conversion: ConversionManager
+    @StateObject private var mcpController = MCPServerController()
 
     init() {
         let toast = ToastCenter()
@@ -23,12 +24,18 @@ struct FontManagerApp: App {
                 .environmentObject(fontService)
                 .environmentObject(conversion)
                 .environmentObject(toastCenter)
+                .environmentObject(updaterModel)
+                .environmentObject(mcpController)
+                .task {
+                    mcpController.fontService = fontService
+                    mcpController.startIfEnabled()
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1000, height: 700)
         .commands {
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: updaterController.updater)
+                CheckForUpdatesView(updater: updaterModel.updater)
             }
             CommandGroup(after: .newItem) {
                 Button("Convert a Font…") {
@@ -53,7 +60,8 @@ struct FontManagerApp: App {
         }
 
         Settings {
-            SettingsView(updater: updaterController.updater)
+            SettingsView(updater: updaterModel.updater)
+                .environmentObject(mcpController)
         }
     }
 }

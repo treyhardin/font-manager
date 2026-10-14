@@ -57,8 +57,13 @@ struct FontListView: View {
                                 ) {
                                     fontService.filterWidth = fontService.filterWidth == width ? nil : width
                                 } label: {
-                                    Image(systemName: width.symbolName)
-                                        .imageScale(.small)
+                                    Text("Ag")
+                                        .font(widthSpecimenFont(width, size: styleGlyphSize))
+                                        .minimumScaleFactor(0.5)
+                                        .lineLimit(1)
+                                        .alignmentGuide(VerticalAlignment.center) { dims in
+                                            dims[.firstTextBaseline] - styleGlyphSize * 0.25
+                                        }
                                 }
                             }
                         }
@@ -95,8 +100,7 @@ struct FontListView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Spacer()
-            Image(systemName: "magnifyingglass")
-                .font(.title)
+            PhIcon(.magnifyingGlass, size: 26)
                 .foregroundStyle(.tertiary)
             Text("No fonts match")
                 .foregroundStyle(.secondary)
@@ -134,8 +138,7 @@ struct SidebarSearchField: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .imageScale(.small)
+            PhIcon(.magnifyingGlass, size: 14)
                 .foregroundStyle(.secondary)
             TextField("Search fonts", text: $text)
                 .textFieldStyle(.plain)
@@ -145,7 +148,7 @@ struct SidebarSearchField: View {
                 Button {
                     text = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    PhIcon(.xCircle, size: 15)
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
@@ -169,8 +172,7 @@ struct FilterMenuLabel: View {
             Text(title).foregroundStyle(.secondary)
             Spacer(minLength: 8)
             Text(value).fontWeight(.medium).foregroundStyle(.primary).lineLimit(1)
-            Image(systemName: "chevron.up.chevron.down")
-                .imageScale(.small)
+            PhIcon(.caretUpDown, size: 13)
                 .foregroundStyle(.secondary)
         }
         .font(.callout)
@@ -397,9 +399,22 @@ func styleSpecimenFont(_ classification: FontClassification, size: CGFloat) -> F
     case .sansSerif: return .system(size: size, design: .default).weight(.semibold)
     case .slabSerif: return .custom("Rockwell", size: size)
     case .script: return .custom("Snell Roundhand", size: size)
-    case .display: return .custom("Marker Felt", size: size)
-    case .monospaced: return .system(size: size, design: .monospaced).weight(.medium)
+    // Courier's typewriter forms read unmistakably as monospace at a glance —
+    // clearer than SF Mono, whose "Ag" looks like a plain sans.
+    case .monospaced: return .custom("Courier New", size: size).weight(.bold)
+    // No blackletter ships with macOS; a heavy serif is the least-misleading stand-in glyph.
+    case .blackletter: return .system(size: size, design: .serif).weight(.heavy)
     case .symbol, .unclassified: return .system(size: size)
+    }
+}
+
+/// Skia (a macOS system typeface) ships genuine condensed/regular/extended width cuts, so
+/// one typeface renders all three Width glyphs — cleaner than horizontally scaling a font.
+func widthSpecimenFont(_ width: FontWidth, size: CGFloat) -> Font {
+    switch width {
+    case .condensed: return .custom("Skia-Regular_Condensed", size: size)
+    case .regular: return .custom("Skia-Regular", size: size)
+    case .expanded: return .custom("Skia-Regular_Extended", size: size)
     }
 }
 
@@ -420,8 +435,7 @@ struct FontRowView: View {
                     if classification != .unclassified {
                         Text(classification.rawValue)
                         if fontService.isOverridden(font) {
-                            Image(systemName: "pencil")
-                                .imageScale(.small)
+                            PhIcon(.pencilSimple, size: 12)
                                 .accessibilityLabel("Overridden")
                         }
                         Text("·")

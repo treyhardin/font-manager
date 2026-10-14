@@ -54,9 +54,10 @@ enum FontClassifier {
         case 1 << 28, 2 << 28, 3 << 28, 4 << 28, 7 << 28: return .serif
         case 5 << 28: return .slabSerif
         case 8 << 28: return .sansSerif
-        case 9 << 28: return .display
         case 10 << 28: return .script
         case 12 << 28: return .symbol
+        // 9 << 28 (Ornamentals/decorative) intentionally falls through — "Display" is not
+        // a category, so let PANOSE/name pick a real bucket or leave it unclassified.
         default: return nil
         }
     }
@@ -78,20 +79,24 @@ enum FontClassifier {
             if (11...15).contains(serifStyle) { return .sansSerif }
             return nil
         case 3: return .script        // Latin Hand Written
-        case 4: return .display       // Latin Decorative
         case 5: return .symbol        // Latin Symbol
+        // case 4 (Latin Decorative) falls through — "Display" is no longer a category.
         default: return nil
         }
     }
 
     private static func fromName(_ name: String) -> FontClassification {
         let lower = name.lowercased()
+        // Blackletter first — its telltale names are specific. Deliberately NOT "gothic",
+        // which in type overwhelmingly means a sans-serif (Franklin Gothic, Alternate Gothic).
+        if lower.contains("blackletter") || lower.contains("black letter") || lower.contains("fraktur")
+            || lower.contains("textura") || lower.contains("gotisch") || lower.contains("schwabacher")
+            || lower.contains("old english") { return .blackletter }
         if lower.contains("mono") { return .monospaced }
         if lower.contains("slab") { return .slabSerif }
         if lower.contains("sans") || lower.contains("grotesk") || lower.contains("gothic") { return .sansSerif }
         if lower.contains("script") || lower.contains("brush") || lower.contains("hand") { return .script }
         if lower.contains("serif") { return .serif }
-        if lower.contains("display") || lower.contains("deco") { return .display }
         return .unclassified
     }
 }

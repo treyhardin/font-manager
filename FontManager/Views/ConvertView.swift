@@ -66,8 +66,7 @@ struct ConvertView: View {
                 .frame(height: 150)
                 .overlay {
                     VStack(spacing: 8) {
-                        Image(systemName: "arrow.up.doc")
-                            .font(.system(size: 30))
+                        PhIcon(.fileArrowUp, size: 30)
                             .foregroundStyle(.secondary)
                         Text("Drop a font here")
                             .foregroundStyle(.secondary)
@@ -98,7 +97,7 @@ struct ConvertView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
-                    Image(systemName: "doc.text")
+                    PhIcon(.fileText, size: 16)
                         .foregroundStyle(.secondary)
                     Text(uploaded.displayName)
                         .fontWeight(.medium)
@@ -155,7 +154,7 @@ struct ConvertView: View {
     @ViewBuilder
     private var statusLabel: some View {
         if let statusText {
-            Label(statusText, systemImage: statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+            PhLabel(statusText, icon: statusIsError ? .warning : .checkCircle)
                 .font(.callout)
                 .foregroundStyle(statusIsError ? .orange : .green)
                 .lineLimit(2)

@@ -224,7 +224,8 @@ class FontService: ObservableObject {
     /// order — drives the filter controls so they never offer an empty bucket.
     var availableClassifications: [FontClassification] {
         let present = Set(fontsForCurrentSource().map(effectiveClassification))
-        return FontClassification.allCases.filter { present.contains($0) }
+        // "Unclassified" isn't a meaningful bucket to filter by — omit it from the controls.
+        return FontClassification.allCases.filter { $0 != .unclassified && present.contains($0) }
     }
 
     /// Widths present in the current source filter, in enum order.

@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var fontService: FontService
     @EnvironmentObject var conversion: ConversionManager
     @EnvironmentObject var toastCenter: ToastCenter
+    @EnvironmentObject var updaterModel: UpdaterViewModel
     @State private var isDropTargeted = false
     @State private var showingDirectories = false
 
@@ -32,6 +33,20 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, minHeight: 460)
         .toolbar {
+            // The badge keeps its own prominent fill — hide the shared glass container
+            // macOS Tahoe would otherwise draw around the toolbar item.
+            if #available(macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    UpdateAvailableButton(model: updaterModel)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: updaterModel.updateAvailable)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    UpdateAvailableButton(model: updaterModel)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: updaterModel.updateAvailable)
+                }
+            }
             // Status shows as bare text on the toolbar — no glass container (macOS Tahoe
             // draws one by default), and a spacer keeps it out of the buttons' container.
             if #available(macOS 26.0, *) {
@@ -49,7 +64,7 @@ struct ContentView: View {
                 Button {
                     conversion.showConvert = true
                 } label: {
-                    Label("Convert", systemImage: "arrow.triangle.2.circlepath")
+                    PhLabel("Convert", icon: .arrowsClockwise)
                         .padding(.horizontal, 6)
                 }
                 .labelStyle(.titleAndIcon)
@@ -58,7 +73,7 @@ struct ContentView: View {
                 Button {
                     showingDirectories = true
                 } label: {
-                    Label("Sources", systemImage: "folder.badge.plus")
+                    PhLabel("Sources", icon: .folderPlus)
                         .padding(.horizontal, 6)
                 }
                 .labelStyle(.titleAndIcon)
@@ -81,7 +96,7 @@ struct ContentView: View {
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
                     .background(Color.accentColor.opacity(0.06))
                     .overlay(
-                        Label("Drop fonts to add — WOFF / WOFF2 are converted", systemImage: "arrow.down.doc")
+                        PhLabel("Drop fonts to add — WOFF / WOFF2 are converted", icon: .fileArrowDown, size: 20)
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     )
@@ -176,8 +191,7 @@ struct SpinningArrow: View {
     @State private var spinning = false
 
     var body: some View {
-        Image(systemName: "arrow.triangle.2.circlepath")
-            .imageScale(.small)
+        PhIcon(.arrowsClockwise, size: 13)
             .rotationEffect(.degrees(spinning ? 360 : 0))
             .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: spinning)
             .onAppear { spinning = true }

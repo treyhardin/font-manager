@@ -20,8 +20,7 @@ struct DirectoriesView: View {
 
             if fontService.customDirectories.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 32))
+                    PhIcon(.folder, size: 32)
                         .foregroundStyle(.secondary)
                     Text("No custom directories")
                         .foregroundStyle(.secondary)
@@ -46,7 +45,7 @@ struct DirectoriesView: View {
                 Button {
                     fontService.addDirectory()
                 } label: {
-                    Label("Add Directory", systemImage: "plus")
+                    PhLabel("Add Directory", icon: .plus)
                 }
 
                 Spacer()
@@ -78,7 +77,7 @@ struct DirectoryRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "folder.fill")
+            PhIcon(.folder, size: 16)
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -100,7 +99,7 @@ struct DirectoryRow: View {
             Button {
                 fontService.removeDirectory(path)
             } label: {
-                Image(systemName: "trash")
+                PhIcon(.trash, size: 15)
                     .foregroundStyle(.red)
             }
             .buttonStyle(.borderless)
